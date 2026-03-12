@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, ChevronRight, ChevronLeft, AlertCircle, CheckCircle, Plus, Trash2, ChevronDown, FileText, Table, Upload, Edit3, Check, Loader } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, ChevronRight, ChevronLeft, AlertCircle, CheckCircle, Plus, Trash2, ChevronDown, FileText, Table, Upload, Loader } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import toast from "react-hot-toast";
 
@@ -178,8 +178,14 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     assigneeId: string;
     picId: string;
     dueDate: string;
-    isClauseRow: boolean; // true if this is a new clause, false if it's a task under a clause
+    isClauseRow: boolean;
   };
+  
+  type ClauseGroup = {
+    clauseRow: SpreadsheetRow;
+    taskRows: SpreadsheetRow[];
+  };
+  
   const [spreadsheetData, setSpreadsheetData] = useState<SpreadsheetRow[]>([
     {
       id: `row-${Date.now()}-1`,
@@ -209,6 +215,100 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
   const [pastedData, setPastedData] = useState("");
   const [groupByClause, setGroupByClause] = useState(true);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+
+  // Helper function for positional grouping
+  const getClauseGroups = (data: SpreadsheetRow[]): ClauseGroup[] => {
+    const groups: ClauseGroup[] = [];
+    let currentGroup: ClauseGroup | null = null;
+    const ungroupedTasks: SpreadsheetRow[] = [];
+
+    data.forEach((row) => {
+      if (row.isClauseRow) {
+        // Save current group if exists
+        if (currentGroup) {
+          groups.push(currentGroup);
+        }
+        // Start new group
+        currentGroup = { clauseRow: row, taskRows: [] };
+      } else {
+        // Task row
+        if (currentGroup) {
+          currentGroup.taskRows.push(row);
+        } else {
+          ungroupedTasks.push(row);
+        }
+      }
+    });
+
+    // Save last group
+    if (currentGroup) {
+      groups.push(currentGroup);
+    }
+
+    // Add ungrouped tasks at the beginning if any
+    if (ungroupedTasks.length > 0) {
+      groups.unshift({
+        clauseRow: {
+          id: "ungrouped",
+          reference: "",
+          clauseTitle: "Ungrouped Tasks",
+          taskName: "",
+          frequency: "MONTHLY",
+          riskRating: "MEDIUM",
+          assigneeId: "",
+          picId: "",
+          dueDate: "",
+          isClauseRow: true,
+        },
+        taskRows: ungroupedTasks,
+      });
+    }
+
+    return groups;
+  };
+
+  // Auto-sync spreadsheet to items array
+  useEffect(() => {
+    if (inputMethod === "spreadsheet" && spreadsheetData.some(r => r.taskName.trim())) {
+      const groups = getClauseGroups(spreadsheetData);
+      const newItems: ItemWithTasks[] = groups
+        .filter(g => g.taskRows.some(t => t.taskName.trim()))
+        .map((group) => ({
+          tempId: `temp-${group.clauseRow.id}`,
+          reference: group.clauseRow.reference || "TBD",
+          title: group.clauseRow.clauseTitle || "Untitled Clause",
+          description: "",
+          isInformational: false,
+          expanded: false,
+          tasks: group.taskRows
+            .filter(t => t.taskName.trim())
+            .map((task) => ({
+              tempId: task.id,
+              name: task.taskName,
+              description: "",
+              expectedOutcome: "",
+              assigneeId: task.assigneeId,
+              picId: task.picId,
+              reviewerId: "",
+              frequency: task.frequency,
+              quarter: "",
+              riskRating: task.riskRating,
+              startDate: "",
+              dueDate: task.dueDate,
+              evidenceRequired: selectedTeam?.evidenceRequired || false,
+              reviewRequired: selectedTeam?.approvalRequired || true,
+              clickupUrl: "",
+              gdriveUrl: "",
+            })),
+        }));
+      
+      // Only update if there's actual content
+      if (newItems.length > 0 && JSON.stringify(newItems) !== JSON.stringify(items)) {
+        setItems(newItems);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spreadsheetData, inputMethod]);
   
   const [newItemForm, setNewItemForm] = useState({
     reference: "",
@@ -667,7 +767,6 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     toast.success(`Added ${newItems.length} items with extracted tasks`);
   };
 
-  // Spreadsheet handlers
   const handleParsePastedData = () => {
     if (!pastedData.trim()) {
       toast.error("Please paste some data first");
@@ -676,31 +775,24 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
 
     const rows = pastedData.trim().split("\n");
     const parsedRows: SpreadsheetRow[] = [];
-    let currentReference = "";
-    let currentClauseTitle = "";
 
     rows.forEach((row, idx) => {
       const columns = row.split("\t");
-      if (columns.length < 3) return; // Need at least reference, title, task name
+      if (columns.length < 3) return;
 
       const reference = columns[0]?.trim() || "";
       const title = columns[1]?.trim() || "";
-      const description = columns[2]?.trim() || "";
       const taskName = columns[3]?.trim() || "";
       const frequency = columns[4]?.trim() || "MONTHLY";
       const riskRating = columns[5]?.trim() || "MEDIUM";
 
       const isNewClause = reference !== "";
-      if (isNewClause) {
-        currentReference = reference;
-        currentClauseTitle = title;
-      }
 
       if (taskName) {
         parsedRows.push({
           id: `row-${Date.now()}-${idx}`,
-          reference: isNewClause ? reference : currentReference,
-          clauseTitle: isNewClause ? title : currentClauseTitle,
+          reference: isNewClause ? reference : "",
+          clauseTitle: isNewClause ? title : "",
           taskName,
           frequency: FREQUENCIES.includes(frequency) ? frequency : "MONTHLY",
           riskRating: RISK_RATINGS.includes(riskRating) ? riskRating : "MEDIUM",
@@ -719,49 +811,63 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     toast.success(`Parsed ${clauseCount} clauses and ${parsedRows.length} tasks from pasted data`);
   };
 
-  const handleApplySpreadsheetData = () => {
-    const clauseMap = new Map<string, { title: string; tasks: SpreadsheetRow[] }>();
+  const handleAddClauseWithTask = () => {
+    const clauseRow: SpreadsheetRow = {
+      id: `clause-${Date.now()}`,
+      reference: "",
+      clauseTitle: "",
+      taskName: "",
+      frequency: defaultFrequency,
+      riskRating: "MEDIUM",
+      assigneeId: "",
+      picId: "",
+      dueDate: "",
+      isClauseRow: true,
+    };
+    const taskRow: SpreadsheetRow = {
+      id: `task-${Date.now()}`,
+      reference: "",
+      clauseTitle: "",
+      taskName: "",
+      frequency: defaultFrequency,
+      riskRating: "MEDIUM",
+      assigneeId: "",
+      picId: "",
+      dueDate: "",
+      isClauseRow: false,
+    };
+    setSpreadsheetData([...spreadsheetData, clauseRow, taskRow]);
+  };
 
-    spreadsheetData.forEach((row) => {
-      const key = row.reference;
-      if (!clauseMap.has(key)) {
-        clauseMap.set(key, { title: row.clauseTitle, tasks: [] });
-      }
-      clauseMap.get(key)!.tasks.push(row);
-    });
+  const handleAddTaskToClause = (clauseId: string) => {
+    const clauseIndex = spreadsheetData.findIndex(r => r.id === clauseId);
+    if (clauseIndex === -1) return;
 
-    const newItems: ItemWithTasks[] = Array.from(clauseMap.entries()).map(
-      ([reference, data]) => ({
-        tempId: `temp-${Date.now()}-${Math.random()}`,
-        reference,
-        title: data.title,
-        description: "",
-        isInformational: false,
-        expanded: false,
-        tasks: data.tasks.map((task) => ({
-          tempId: `task-${Date.now()}-${Math.random()}`,
-          name: task.taskName,
-          description: "",
-          expectedOutcome: "",
-          assigneeId: task.assigneeId,
-          picId: task.picId,
-          reviewerId: "",
-          frequency: task.frequency,
-          quarter: "",
-          riskRating: task.riskRating,
-          startDate: "",
-          dueDate: task.dueDate,
-          evidenceRequired: selectedTeam?.evidenceRequired || false,
-          reviewRequired: selectedTeam?.approvalRequired || true,
-          clickupUrl: "",
-          gdriveUrl: "",
-        })),
-      })
-    );
+    // Find the next clause row or end of array
+    let insertIndex = clauseIndex + 1;
+    while (insertIndex < spreadsheetData.length && !spreadsheetData[insertIndex].isClauseRow) {
+      insertIndex++;
+    }
 
-    setItems([...items, ...newItems]);
-    setSpreadsheetData([]);
-    toast.success(`Added ${newItems.length} clauses from spreadsheet`);
+    const newTask: SpreadsheetRow = {
+      id: `task-${Date.now()}`,
+      reference: "",
+      clauseTitle: "",
+      taskName: "",
+      frequency: defaultFrequency,
+      riskRating: "MEDIUM",
+      assigneeId: "",
+      picId: "",
+      dueDate: "",
+      isClauseRow: false,
+    };
+
+    const newData = [
+      ...spreadsheetData.slice(0, insertIndex),
+      newTask,
+      ...spreadsheetData.slice(insertIndex),
+    ];
+    setSpreadsheetData(newData);
   };
 
   const handleStep1Next = async () => {
@@ -2197,53 +2303,17 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                           Items & Tasks
                         </span>
                         <span className="text-sm" style={{ color: "var(--text-muted)" }}>
-                          · {new Set(spreadsheetData.filter(r => r.reference).map((r) => r.reference)).size} clauses, {spreadsheetData.filter(r => r.taskName).length} tasks
+                          · {spreadsheetData.filter(r => r.isClauseRow).length} clauses, {spreadsheetData.filter(r => !r.isClauseRow && r.taskName.trim()).length} tasks
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
                         <button
-                          onClick={() => {
-                            const newRow: SpreadsheetRow = {
-                              id: `row-${Date.now()}`,
-                              reference: "",
-                              clauseTitle: "",
-                              taskName: "",
-                              frequency: defaultFrequency,
-                              riskRating: "MEDIUM",
-                              assigneeId: "",
-                              picId: "",
-                              dueDate: "",
-                              isClauseRow: true,
-                            };
-                            setSpreadsheetData([...spreadsheetData, newRow]);
-                          }}
+                          onClick={handleAddClauseWithTask}
                           className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
                           style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
                         >
                           <Plus size={14} />
-                          Add Clause Row
-                        </button>
-                        <button
-                          onClick={() => {
-                            const newRow: SpreadsheetRow = {
-                              id: `row-${Date.now()}`,
-                              reference: "",
-                              clauseTitle: "",
-                              taskName: "",
-                              frequency: defaultFrequency,
-                              riskRating: "MEDIUM",
-                              assigneeId: "",
-                              picId: "",
-                              dueDate: "",
-                              isClauseRow: false,
-                            };
-                            setSpreadsheetData([...spreadsheetData, newRow]);
-                          }}
-                          className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
-                          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
-                        >
-                          <Plus size={14} />
-                          Add Task Row
+                          Add Clause with Task
                         </button>
                         <div className="flex items-center gap-2">
                           <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
@@ -2265,75 +2335,156 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                       </div>
                     </div>
 
-                      {/* Table */}
-                      <div className="overflow-x-auto rounded-[14px] border" style={{ borderColor: "var(--border)", backgroundColor: "white" }}>
-                        <style>{`
-                          .spreadsheet-cell {
-                            border: none;
-                            background: transparent;
-                            outline: none;
-                            width: 100%;
-                            padding: 8px 12px;
-                            font-size: 13px;
-                            transition: background-color 0.15s;
-                          }
-                          .spreadsheet-cell:hover {
-                            background-color: var(--bg-subtle);
-                          }
-                          .spreadsheet-cell:focus {
-                            background-color: white;
-                            border: 1px solid var(--blue);
-                            box-shadow: 0 0 0 2px var(--blue-light);
-                            border-radius: 4px;
-                          }
-                          .spreadsheet-row:hover {
-                            background-color: var(--bg-hover);
-                          }
-                          .spreadsheet-row:hover .delete-button {
-                            opacity: 1;
-                          }
-                          .delete-button {
-                            opacity: 0;
-                            transition: opacity 0.15s;
-                          }
-                        `}</style>
-                        <table className="w-full border-collapse">
-                          <thead>
-                            <tr style={{ borderBottom: "1px solid var(--border)", backgroundColor: "var(--bg-subtle)" }}>
-                              <th style={{ width: "30px", padding: "10px 8px", textAlign: "center" }}>
-                                <input type="checkbox" className="rounded" />
-                              </th>
-                              <th style={{ minWidth: "100px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                                Reference
-                              </th>
-                              <th style={{ minWidth: "200px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                                Clause Title
-                              </th>
-                              <th style={{ minWidth: "240px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                                Task Name
-                              </th>
-                              <th style={{ minWidth: "100px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                                Frequency
-                              </th>
-                              <th style={{ minWidth: "80px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                                Risk
-                              </th>
-                              <th style={{ minWidth: "120px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                                Responsible
-                              </th>
-                              <th style={{ minWidth: "120px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                                PIC
-                              </th>
-                              <th style={{ minWidth: "110px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                                Due Date
-                              </th>
-                              <th style={{ width: "40px", padding: "10px 8px" }}></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(() => {
-                              if (!groupByClause) {
-                                return spreadsheetData.map((row) => (
+                    {/* Table */}
+                    <div className="overflow-x-auto rounded-[14px] border" style={{ borderColor: "var(--border)", backgroundColor: "white" }}>
+                      <style>{`
+                        .spreadsheet-cell {
+                          border: none;
+                          background: transparent;
+                          outline: none;
+                          width: 100%;
+                          padding: 8px 12px;
+                          font-size: 13px;
+                          transition: background-color 0.15s;
+                        }
+                        .spreadsheet-cell:hover:not(:disabled) {
+                          background-color: var(--bg-subtle);
+                        }
+                        .spreadsheet-cell:focus {
+                          background-color: white;
+                          border: 1px solid var(--blue);
+                          box-shadow: 0 0 0 2px var(--blue-light);
+                          border-radius: 4px;
+                        }
+                        .spreadsheet-cell:disabled {
+                          opacity: 0.3;
+                          cursor: not-allowed;
+                        }
+                        .spreadsheet-row:hover {
+                          background-color: var(--bg-hover);
+                        }
+                        .spreadsheet-row:hover .delete-button {
+                          opacity: 1;
+                        }
+                        .delete-button {
+                          opacity: 0;
+                          transition: opacity 0.15s;
+                        }
+                        .clause-header-row {
+                          background: linear-gradient(135deg, var(--blue-light) 0%, var(--blue-mid) 100%);
+                          border-bottom: 2px solid var(--blue);
+                        }
+                      `}</style>
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr style={{ borderBottom: "1px solid var(--border)", backgroundColor: "var(--bg-subtle)" }}>
+                            <th style={{ width: "30px", padding: "10px 8px", textAlign: "center" }}>
+                              <input 
+                                type="checkbox" 
+                                className="rounded"
+                                checked={selectedRows.size === spreadsheetData.length && spreadsheetData.length > 0}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedRows(new Set(spreadsheetData.map(r => r.id)));
+                                  } else {
+                                    setSelectedRows(new Set());
+                                  }
+                                }}
+                              />
+                            </th>
+                            {!groupByClause && (
+                              <>
+                                <th style={{ minWidth: "100px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                  Reference
+                                </th>
+                                <th style={{ minWidth: "200px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                  Clause Title
+                                </th>
+                              </>
+                            )}
+                            <th style={{ minWidth: "240px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                              Task Name
+                            </th>
+                            <th style={{ minWidth: "100px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                              Frequency
+                            </th>
+                            <th style={{ minWidth: "80px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                              Risk
+                            </th>
+                            <th style={{ minWidth: "120px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                              Responsible
+                            </th>
+                            <th style={{ minWidth: "120px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                              PIC
+                            </th>
+                            <th style={{ minWidth: "110px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                              Due Date
+                            </th>
+                            <th style={{ width: "40px", padding: "10px 8px" }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {groupByClause ? (
+                            // Grouped view with clause headers
+                            getClauseGroups(spreadsheetData).map((group) => (
+                              <React.Fragment key={group.clauseRow.id}>
+                                {/* Clause Header Row */}
+                                <tr className="clause-header-row">
+                                  <td colSpan={8} style={{ padding: "10px 12px" }}>
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                        <input
+                                          type="text"
+                                          value={group.clauseRow.reference}
+                                          onChange={(e) =>
+                                            setSpreadsheetData((prev) =>
+                                              prev.map((r) =>
+                                                r.id === group.clauseRow.id ? { ...r, reference: e.target.value } : r
+                                              )
+                                            )
+                                          }
+                                          placeholder="Ref"
+                                          className="w-20 rounded border-0 bg-white/80 px-2 py-1 font-mono text-sm font-bold outline-none focus:ring-2 focus:ring-white"
+                                          style={{ color: "var(--purple)" }}
+                                        />
+                                        <span style={{ color: "var(--blue)", fontWeight: 500 }}>—</span>
+                                        <input
+                                          type="text"
+                                          value={group.clauseRow.clauseTitle}
+                                          onChange={(e) =>
+                                            setSpreadsheetData((prev) =>
+                                              prev.map((r) =>
+                                                r.id === group.clauseRow.id ? { ...r, clauseTitle: e.target.value } : r
+                                              )
+                                            )
+                                          }
+                                          placeholder="Clause title"
+                                          className="flex-1 rounded border-0 bg-white/80 px-2 py-1 text-sm font-semibold outline-none focus:ring-2 focus:ring-white"
+                                          style={{ color: "var(--blue)" }}
+                                        />
+                                        <span className="rounded-full px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: "white", color: "var(--blue)" }}>
+                                          {group.taskRows.filter(t => t.taskName.trim()).length} task{group.taskRows.filter(t => t.taskName.trim()).length !== 1 ? "s" : ""}
+                                        </span>
+                                      </div>
+                                      {group.clauseRow.id !== "ungrouped" && (
+                                        <button
+                                          onClick={() =>
+                                            setSpreadsheetData((prev) =>
+                                              prev.filter((r) => r.id !== group.clauseRow.id && !group.taskRows.some(t => t.id === r.id))
+                                            )
+                                          }
+                                          className="rounded p-1 transition-colors hover:bg-white/30"
+                                          style={{ color: "var(--red)" }}
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {/* Task Rows */}
+                                {group.taskRows.map((row) => (
                                   <tr key={row.id} className="spreadsheet-row" style={{ borderBottom: "1px solid var(--border-light)" }}>
                                     <td style={{ padding: "4px 8px", textAlign: "center" }}>
                                       <input
@@ -2354,40 +2505,13 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                     <td style={{ padding: 0 }}>
                                       <input
                                         type="text"
-                                        value={row.reference}
-                                        disabled={!row.isClauseRow}
-                                        onChange={(e) =>
-                                          setSpreadsheetData((prev) =>
-                                            prev.map((r) => (r.id === row.id ? { ...r, reference: e.target.value } : r))
-                                          )
-                                        }
-                                        className="spreadsheet-cell font-mono font-bold disabled:opacity-30"
-                                        style={{ color: "var(--purple)" }}
-                                      />
-                                    </td>
-                                    <td style={{ padding: 0 }}>
-                                      <input
-                                        type="text"
-                                        value={row.clauseTitle}
-                                        disabled={!row.isClauseRow}
-                                        onChange={(e) =>
-                                          setSpreadsheetData((prev) =>
-                                            prev.map((r) => (r.id === row.id ? { ...r, clauseTitle: e.target.value } : r))
-                                          )
-                                        }
-                                        className="spreadsheet-cell disabled:opacity-30"
-                                        style={{ fontWeight: 500, color: "var(--text-primary)" }}
-                                      />
-                                    </td>
-                                    <td style={{ padding: 0 }}>
-                                      <input
-                                        type="text"
                                         value={row.taskName}
                                         onChange={(e) =>
                                           setSpreadsheetData((prev) =>
                                             prev.map((r) => (r.id === row.id ? { ...r, taskName: e.target.value } : r))
                                           )
                                         }
+                                        placeholder="Task name..."
                                         className="spreadsheet-cell"
                                         style={{ color: "var(--text-primary)" }}
                                       />
@@ -2491,236 +2615,201 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                       </button>
                                     </td>
                                   </tr>
-                                ));
-                              }
+                                ))}
 
-                              // Grouped by clause
-                              const clauseGroups = new Map<string, SpreadsheetRow[]>();
-                              spreadsheetData.forEach((row) => {
-                                const key = row.reference || `empty-${row.id}`;
-                                if (!clauseGroups.has(key)) {
-                                  clauseGroups.set(key, []);
-                                }
-                                clauseGroups.get(key)!.push(row);
-                              });
+                                {/* Add Task Link */}
+                                {group.clauseRow.id !== "ungrouped" && (
+                                  <tr style={{ backgroundColor: "var(--bg-subtle)" }}>
+                                    <td colSpan={8} style={{ padding: "6px 12px" }}>
+                                      <button
+                                        onClick={() => handleAddTaskToClause(group.clauseRow.id)}
+                                        className="flex items-center gap-1 text-xs font-medium transition-colors hover:underline"
+                                        style={{ color: "var(--blue)" }}
+                                      >
+                                        <Plus size={12} />
+                                        Add task to this clause
+                                      </button>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            ))
+                          ) : (
+                            // Flat view
+                            spreadsheetData.map((row) => (
+                              <tr key={row.id} className="spreadsheet-row" style={{ borderBottom: "1px solid var(--border-light)" }}>
+                                <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedRows.has(row.id)}
+                                    onChange={(e) => {
+                                      const newSet = new Set(selectedRows);
+                                      if (e.target.checked) {
+                                        newSet.add(row.id);
+                                      } else {
+                                        newSet.delete(row.id);
+                                      }
+                                      setSelectedRows(newSet);
+                                    }}
+                                    className="rounded"
+                                  />
+                                </td>
+                                <td style={{ padding: 0 }}>
+                                  <input
+                                    type="text"
+                                    value={row.reference}
+                                    disabled={!row.isClauseRow}
+                                    onChange={(e) =>
+                                      setSpreadsheetData((prev) =>
+                                        prev.map((r) => (r.id === row.id ? { ...r, reference: e.target.value } : r))
+                                      )
+                                    }
+                                    placeholder={row.isClauseRow ? "Ref" : ""}
+                                    className="spreadsheet-cell font-mono font-bold"
+                                    style={{ color: "var(--purple)" }}
+                                  />
+                                </td>
+                                <td style={{ padding: 0 }}>
+                                  <input
+                                    type="text"
+                                    value={row.clauseTitle}
+                                    disabled={!row.isClauseRow}
+                                    onChange={(e) =>
+                                      setSpreadsheetData((prev) =>
+                                        prev.map((r) => (r.id === row.id ? { ...r, clauseTitle: e.target.value } : r))
+                                      )
+                                    }
+                                    placeholder={row.isClauseRow ? "Clause title" : ""}
+                                    className="spreadsheet-cell"
+                                    style={{ fontWeight: 500, color: "var(--text-primary)" }}
+                                  />
+                                </td>
+                                <td style={{ padding: 0 }}>
+                                  <input
+                                    type="text"
+                                    value={row.taskName}
+                                    onChange={(e) =>
+                                      setSpreadsheetData((prev) =>
+                                        prev.map((r) => (r.id === row.id ? { ...r, taskName: e.target.value } : r))
+                                      )
+                                    }
+                                    placeholder="Task name..."
+                                    className="spreadsheet-cell"
+                                    style={{ color: "var(--text-primary)" }}
+                                  />
+                                </td>
+                                <td style={{ padding: "4px" }}>
+                                  <select
+                                    value={row.frequency}
+                                    onChange={(e) =>
+                                      setSpreadsheetData((prev) =>
+                                        prev.map((r) => (r.id === row.id ? { ...r, frequency: e.target.value } : r))
+                                      )
+                                    }
+                                    className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                  >
+                                    {FREQUENCIES.map((f) => (
+                                      <option key={f} value={f}>
+                                        {f.replace(/_/g, " ")}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td style={{ padding: "4px" }}>
+                                  <select
+                                    value={row.riskRating}
+                                    onChange={(e) =>
+                                      setSpreadsheetData((prev) =>
+                                        prev.map((r) => (r.id === row.id ? { ...r, riskRating: e.target.value } : r))
+                                      )
+                                    }
+                                    className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                  >
+                                    {RISK_RATINGS.map((rating) => (
+                                      <option key={rating} value={rating}>
+                                        {rating}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td style={{ padding: "4px" }}>
+                                  <select
+                                    value={row.assigneeId}
+                                    onChange={(e) =>
+                                      setSpreadsheetData((prev) =>
+                                        prev.map((r) => (r.id === row.id ? { ...r, assigneeId: e.target.value } : r))
+                                      )
+                                    }
+                                    className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                  >
+                                    <option value="">None</option>
+                                    {users.map((user) => (
+                                      <option key={user.id} value={user.id}>
+                                        {user.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td style={{ padding: "4px" }}>
+                                  <select
+                                    value={row.picId}
+                                    onChange={(e) =>
+                                      setSpreadsheetData((prev) =>
+                                        prev.map((r) => (r.id === row.id ? { ...r, picId: e.target.value } : r))
+                                      )
+                                    }
+                                    className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                  >
+                                    <option value="">None</option>
+                                    {users.map((user) => (
+                                      <option key={user.id} value={user.id}>
+                                        {user.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td style={{ padding: "4px" }}>
+                                  <input
+                                    type="date"
+                                    value={row.dueDate}
+                                    onChange={(e) =>
+                                      setSpreadsheetData((prev) =>
+                                        prev.map((r) => (r.id === row.id ? { ...r, dueDate: e.target.value } : r))
+                                      )
+                                    }
+                                    className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                  />
+                                </td>
+                                <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                                  <button
+                                    onClick={() =>
+                                      setSpreadsheetData((prev) => prev.filter((r) => r.id !== row.id))
+                                    }
+                                    className="delete-button rounded p-1 transition-colors hover:bg-[var(--red-light)]"
+                                    style={{ color: "var(--red)" }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
 
-                              return Array.from(clauseGroups.entries()).map(([reference, rows]) => (
-                                <>
-                                  {/* Clause Header Row */}
-                                  {reference && reference !== `empty-${rows[0]?.id}` && (
-                                    <tr key={`header-${reference}`} style={{ backgroundColor: "var(--blue-light)", borderBottom: "1px solid var(--blue-mid)" }}>
-                                      <td colSpan={10} style={{ padding: "8px 12px" }}>
-                                        <span className="font-semibold" style={{ color: "var(--blue)", fontSize: "13px" }}>
-                                          {reference} — {rows[0]?.clauseTitle} ({rows.filter(r => r.taskName).length} task{rows.filter(r => r.taskName).length !== 1 ? "s" : ""})
-                                        </span>
-                                      </td>
-                                    </tr>
-                                  )}
-                                  {/* Task Rows */}
-                                  {rows.map((row, idx) => (
-                                    <tr key={row.id} className="spreadsheet-row" style={{ borderBottom: "1px solid var(--border-light)" }}>
-                                      <td style={{ padding: "4px 8px", textAlign: "center" }}>
-                                        <input
-                                          type="checkbox"
-                                          checked={selectedRows.has(row.id)}
-                                          onChange={(e) => {
-                                            const newSet = new Set(selectedRows);
-                                            if (e.target.checked) {
-                                              newSet.add(row.id);
-                                            } else {
-                                              newSet.delete(row.id);
-                                            }
-                                            setSelectedRows(newSet);
-                                          }}
-                                          className="rounded"
-                                        />
-                                      </td>
-                                      <td style={{ padding: 0 }}>
-                                        {row.isClauseRow ? (
-                                          <input
-                                            type="text"
-                                            value={row.reference}
-                                            onChange={(e) =>
-                                              setSpreadsheetData((prev) =>
-                                                prev.map((r) => (r.reference === reference ? { ...r, reference: e.target.value } : r))
-                                              )
-                                            }
-                                            className="spreadsheet-cell font-mono font-bold"
-                                            style={{ color: "var(--purple)" }}
-                                          />
-                                        ) : (
-                                          <div style={{ padding: "8px 12px" }}></div>
-                                        )}
-                                      </td>
-                                      <td style={{ padding: 0 }}>
-                                        {row.isClauseRow ? (
-                                          <input
-                                            type="text"
-                                            value={row.clauseTitle}
-                                            onChange={(e) =>
-                                              setSpreadsheetData((prev) =>
-                                                prev.map((r) => (r.reference === reference ? { ...r, clauseTitle: e.target.value } : r))
-                                              )
-                                            }
-                                            className="spreadsheet-cell"
-                                            style={{ fontWeight: 500, color: "var(--text-primary)" }}
-                                          />
-                                        ) : (
-                                          <div style={{ padding: "8px 12px" }}></div>
-                                        )}
-                                      </td>
-                                      <td style={{ padding: 0 }}>
-                                        <input
-                                          type="text"
-                                          value={row.taskName}
-                                          onChange={(e) =>
-                                            setSpreadsheetData((prev) =>
-                                              prev.map((r) => (r.id === row.id ? { ...r, taskName: e.target.value } : r))
-                                            )
-                                          }
-                                          className="spreadsheet-cell"
-                                          style={{ color: "var(--text-primary)" }}
-                                        />
-                                      </td>
-                                      <td style={{ padding: "4px" }}>
-                                        <select
-                                          value={row.frequency}
-                                          onChange={(e) =>
-                                            setSpreadsheetData((prev) =>
-                                              prev.map((r) => (r.id === row.id ? { ...r, frequency: e.target.value } : r))
-                                            )
-                                          }
-                                          className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
-                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                                        >
-                                          {FREQUENCIES.map((f) => (
-                                            <option key={f} value={f}>
-                                              {f.replace(/_/g, " ")}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </td>
-                                      <td style={{ padding: "4px" }}>
-                                        <select
-                                          value={row.riskRating}
-                                          onChange={(e) =>
-                                            setSpreadsheetData((prev) =>
-                                              prev.map((r) => (r.id === row.id ? { ...r, riskRating: e.target.value } : r))
-                                            )
-                                          }
-                                          className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
-                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                                        >
-                                          {RISK_RATINGS.map((rating) => (
-                                            <option key={rating} value={rating}>
-                                              {rating}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </td>
-                                      <td style={{ padding: "4px" }}>
-                                        <select
-                                          value={row.assigneeId}
-                                          onChange={(e) =>
-                                            setSpreadsheetData((prev) =>
-                                              prev.map((r) => (r.id === row.id ? { ...r, assigneeId: e.target.value } : r))
-                                            )
-                                          }
-                                          className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
-                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                                        >
-                                          <option value="">None</option>
-                                          {users.map((user) => (
-                                            <option key={user.id} value={user.id}>
-                                              {user.name}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </td>
-                                      <td style={{ padding: "4px" }}>
-                                        <select
-                                          value={row.picId}
-                                          onChange={(e) =>
-                                            setSpreadsheetData((prev) =>
-                                              prev.map((r) => (r.id === row.id ? { ...r, picId: e.target.value } : r))
-                                            )
-                                          }
-                                          className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
-                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                                        >
-                                          <option value="">None</option>
-                                          {users.map((user) => (
-                                            <option key={user.id} value={user.id}>
-                                              {user.name}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </td>
-                                      <td style={{ padding: "4px" }}>
-                                        <input
-                                          type="date"
-                                          value={row.dueDate}
-                                          onChange={(e) =>
-                                            setSpreadsheetData((prev) =>
-                                              prev.map((r) => (r.id === row.id ? { ...r, dueDate: e.target.value } : r))
-                                            )
-                                          }
-                                          className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
-                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                                        />
-                                      </td>
-                                      <td style={{ padding: "4px 8px", textAlign: "center" }}>
-                                        <button
-                                          onClick={() =>
-                                            setSpreadsheetData((prev) => prev.filter((r) => r.id !== row.id))
-                                          }
-                                          className="delete-button rounded p-1 transition-colors hover:bg-[var(--red-light)]"
-                                          style={{ color: "var(--red)" }}
-                                        >
-                                          <Trash2 size={14} />
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </>
-                              ));
-                            })()}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Bottom Actions */}
-                      <div className="flex items-center justify-between">
-                        <button
-                          onClick={() => {
-                            const newRow: SpreadsheetRow = {
-                              id: `row-${Date.now()}`,
-                              reference: "",
-                              clauseTitle: "",
-                              taskName: "",
-                              frequency: defaultFrequency,
-                              riskRating: "MEDIUM",
-                              assigneeId: "",
-                              picId: "",
-                              dueDate: "",
-                              isClauseRow: true,
-                            };
-                            setSpreadsheetData([...spreadsheetData, newRow]);
-                          }}
-                          className="flex items-center gap-2 text-sm font-medium transition-colors hover:underline"
-                          style={{ color: "var(--blue)" }}
-                        >
-                          <Plus size={16} />
-                          Add another clause with tasks
-                        </button>
-                        <button
-                          onClick={handleApplySpreadsheetData}
-                          className="h-10 rounded-lg px-6 text-sm font-medium text-white"
-                          style={{ backgroundColor: "var(--blue)" }}
-                        >
-                          Apply to Items
-                        </button>
-                      </div>
+                    {/* Info Message */}
+                    <div className="flex items-start gap-2 rounded-lg border p-3" style={{ borderColor: "var(--blue-mid)", backgroundColor: "var(--blue-light)" }}>
+                      <AlertCircle size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--blue)" }} />
+                      <p className="text-xs" style={{ color: "var(--text-primary)" }}>
+                        <strong>Auto-syncing:</strong> Data entered here automatically feeds into Steps 3 &amp; 4. No need to click &quot;Apply&quot;.
+                      </p>
+                    </div>
                   </>
                 </div>
               )}

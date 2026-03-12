@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+// @ts-expect-error - pdf-parse has incorrect type definitions
 import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 
@@ -223,9 +224,10 @@ export async function POST(req: NextRequest) {
       additionalInstructions || undefined
     );
 
-    let extractedData: ExtractionResponse;
+    let extractedData: ExtractionResponse | undefined;
     let retryCount = 0;
     const maxRetries = 2;
+    let lastMessage: Anthropic.Messages.Message | undefined;
 
     while (retryCount <= maxRetries) {
       try {
@@ -239,6 +241,8 @@ export async function POST(req: NextRequest) {
             },
           ],
         });
+
+        lastMessage = message;
 
         const responseText =
           message.content[0].type === "text" ? message.content[0].text : "";
@@ -268,7 +272,7 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        if (retryCount <= maxRetries) {
+        if (retryCount <= maxRetries && lastMessage) {
           const correctionPrompt = `The previous response was not valid JSON. Please return ONLY a valid JSON object with this exact structure, with no markdown formatting or extra text:
 {
   "clauses": [
@@ -298,8 +302,8 @@ Please retry the extraction now.`;
               {
                 role: "assistant",
                 content:
-                  message.content[0].type === "text"
-                    ? message.content[0].text
+                  lastMessage.content[0].type === "text"
+                    ? lastMessage.content[0].text
                     : "",
               },
               { role: "user", content: correctionPrompt },
@@ -322,9 +326,19 @@ Please retry the extraction now.`;
           ) {
             continue;
           }
+          lastMessage = retryMessage;
           break;
         }
       }
+    }
+
+    if (!extractedData) {
+      return NextResponse.json(
+        {
+          error: "Failed to extract data from document after all retries",
+        },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
