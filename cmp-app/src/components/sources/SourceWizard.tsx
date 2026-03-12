@@ -100,6 +100,7 @@ const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
 export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardProps) {
   const [step, setStep] = useState(existingSource ? 2 : 1);
   const [loading, setLoading] = useState(false);
+  const [createdSourceId, setCreatedSourceId] = useState<string | null>(null);
 
   // Reference data
   const [teams, setTeams] = useState<Team[]>([]);
@@ -423,10 +424,10 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           throw new Error(error.error || "Failed to create source");
         }
 
-        await res.json();
+        const createdSource = await res.json();
+        setCreatedSourceId(createdSource.id); // Store the created source ID
         toast.success("Source draft created");
-        // Store source ID for later steps
-        // For now, just move to step 2
+        // Move to step 2
         setStep(2);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Failed to create source";
@@ -667,8 +668,109 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
   };
 
   const handleGenerate = async () => {
-    // TODO: Implement generation logic
-    toast.success("Source generation coming soon!");
+    // Validation: check for blocking issues
+    const itemsWithoutReferences = items.filter((item) => !item.reference);
+    const tasksWithoutNames = items.flatMap((item) => item.tasks.filter((task) => !task.name));
+
+    if (itemsWithoutReferences.length > 0) {
+      toast.error(`${itemsWithoutReferences.length} item(s) without a reference. Please fix before generating.`);
+      return;
+    }
+
+    if (tasksWithoutNames.length > 0) {
+      toast.error(`${tasksWithoutNames.length} task(s) without a name. Please fix before generating.`);
+      return;
+    }
+
+    if (items.length === 0) {
+      toast.error("Please add at least one item before generating");
+      return;
+    }
+
+    const totalTasks = items.reduce((sum, item) => sum + item.tasks.length, 0);
+    if (totalTasks === 0) {
+      toast.error("Please add at least one task before generating");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Transform wizard data to API format
+      // For each item, create tasks for ALL selected entities
+      const apiPayload = {
+        items: items
+          .filter((item) => !item.isInformational) // Skip informational items
+          .map((item) => ({
+            item: {
+              reference: item.reference,
+              title: item.title,
+              description: item.description || "",
+              parentId: null,
+              sortOrder: 0,
+            },
+            // For each task definition, create one task per entity
+            tasks: item.tasks.flatMap((task) =>
+              selectedEntityIds.map((entityId) => ({
+                name: task.name,
+                description: task.description || "",
+                expectedOutcome: task.expectedOutcome || "",
+                entityId, // One task per entity
+                frequency: task.frequency,
+                quarter: task.quarter || "",
+                riskRating: task.riskRating,
+                assigneeId: task.assigneeId || "",
+                picId: task.picId || "",
+                reviewerId: task.reviewerId || "",
+                startDate: task.startDate || "",
+                dueDate: task.dueDate || "",
+                testingPeriodStart: "",
+                testingPeriodEnd: "",
+                evidenceRequired: task.evidenceRequired,
+                narrativeRequired: selectedTeam?.narrativeRequired || false,
+                reviewRequired: task.reviewRequired,
+                clickupUrl: task.clickupUrl || "",
+                gdriveUrl: task.gdriveUrl || "",
+              }))
+            ),
+          })),
+      };
+
+      const sourceId = existingSource?.id || createdSourceId;
+      if (!sourceId) {
+        toast.error("Source ID not found");
+        return;
+      }
+
+      const res = await fetch(`/api/sources/${sourceId}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(apiPayload),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to generate tasks");
+      }
+
+      const result = await res.json();
+      
+      toast.success(
+        `✓ Successfully generated ${result.tasksCreated} task${result.tasksCreated !== 1 ? "s" : ""} across ${result.itemsCreated} item${result.itemsCreated !== 1 ? "s" : ""}!`
+      );
+
+      if (result.warnings && result.warnings.length > 0) {
+        result.warnings.forEach((warning: string) => toast(warning, { icon: "⚠️" }));
+      }
+
+      // Close wizard and refresh sources list
+      onClose();
+    } catch (error) {
+      console.error("Generation error:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to generate tasks");
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!isOpen) return null;
