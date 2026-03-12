@@ -6,6 +6,7 @@ import { requirePermission, getEntityFilter } from "@/lib/permissions";
 import { logAuditEvent } from "@/lib/audit";
 import { taskQuerySchema, createTaskSchema } from "@/lib/validations/tasks";
 import { Prisma } from "@prisma/client";
+import { activatePlannedTasks } from "@/lib/taskActivation";
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,6 +16,9 @@ export async function GET(req: NextRequest) {
     }
 
     await requirePermission(session, "TASKS", "VIEW");
+
+    // Auto-activate planned tasks (runs max once per hour)
+    await activatePlannedTasks(session.user.userId);
 
     const searchParams = Object.fromEntries(req.nextUrl.searchParams.entries());
     const params = taskQuerySchema.parse(searchParams);
@@ -33,6 +37,12 @@ export async function GET(req: NextRequest) {
 
     if (params.status) {
       where.status = params.status;
+    } else {
+      // By default, exclude PLANNED tasks from the task tracker
+      // Only show active statuses: TO_DO, IN_PROGRESS, PENDING_REVIEW, COMPLETED, DEFERRED, NOT_APPLICABLE
+      where.status = {
+        not: "PLANNED"
+      };
     }
 
     if (params.riskRating) {
@@ -49,6 +59,10 @@ export async function GET(req: NextRequest) {
 
     if (params.sourceId) {
       where.sourceId = params.sourceId;
+    }
+
+    if (params.recurrenceGroupId) {
+      where.recurrenceGroupId = params.recurrenceGroupId;
     }
 
     if (params.search) {

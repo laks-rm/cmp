@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, memo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { useEntity } from "@/contexts/EntityContext";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -18,9 +19,11 @@ import {
   ChevronRight,
   AlertCircle,
   Clock,
-  Calendar,
+  Calendar as CalendarIcon,
   TrendingUp,
   X,
+  Info,
+  ArrowRight,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { format, isPast } from "date-fns";
@@ -351,7 +354,7 @@ export function TaskTrackerClient() {
     { id: "all", label: "All", active: filters.preset === "all" },
     { id: "overdue", label: "Overdue", active: filters.preset === "overdue", icon: <AlertCircle size={14} /> },
     { id: "pending-review", label: "Pending Review", active: filters.preset === "pending-review", icon: <Clock size={14} /> },
-    { id: "due-week", label: "Due This Week", active: filters.preset === "due-week", icon: <Calendar size={14} /> },
+    { id: "due-week", label: "Due This Week", active: filters.preset === "due-week", icon: <CalendarIcon size={14} /> },
     { id: "high-risk", label: "High Risk", active: filters.preset === "high-risk", icon: <TrendingUp size={14} /> },
   ];
 
@@ -374,6 +377,27 @@ export function TaskTrackerClient() {
 
   return (
     <div className="space-y-4">
+      {/* Calendar Info Chip */}
+      <div className="flex items-center justify-between rounded-lg border p-3" style={{ backgroundColor: "var(--bg-subtle)", borderColor: "var(--border)" }}>
+        <div className="flex items-center gap-2">
+          <Info size={16} style={{ color: "var(--blue)" }} />
+          <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            Showing active tasks. View all planned tasks in
+          </span>
+        </div>
+        <Link
+          href="/calendar"
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+          style={{ backgroundColor: "var(--blue)", color: "white" }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        >
+          <CalendarIcon size={14} />
+          Calendar
+          <ArrowRight size={14} />
+        </Link>
+      </div>
+
       {/* Source Filter Indicator */}
       {sourceFilter && (
         <div className="flex items-center justify-between rounded-lg border p-3" style={{ backgroundColor: "var(--blue-light)", borderColor: "var(--blue)" }}>

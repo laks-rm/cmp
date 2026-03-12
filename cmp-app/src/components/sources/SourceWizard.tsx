@@ -178,6 +178,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     riskRating: string;
     responsibleTeamId: string;
     picId: string;
+    reviewerId: string;
     dueDate: string;
     evidenceRequired: boolean;
     reviewRequired: boolean;
@@ -200,6 +201,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       riskRating: "MEDIUM",
       responsibleTeamId: "",
       picId: "",
+      reviewerId: "",
       dueDate: "",
       evidenceRequired: selectedTeam?.evidenceRequired || false,
       reviewRequired: selectedTeam?.approvalRequired || true,
@@ -215,6 +217,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       riskRating: "MEDIUM",
       responsibleTeamId: "",
       picId: "",
+      reviewerId: "",
       dueDate: "",
       evidenceRequired: selectedTeam?.evidenceRequired || false,
       reviewRequired: selectedTeam?.approvalRequired || true,
@@ -268,6 +271,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           riskRating: "MEDIUM",
           responsibleTeamId: "",
           picId: "",
+          reviewerId: "",
           dueDate: "",
           evidenceRequired: false,
           reviewRequired: true,
@@ -829,6 +833,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           riskRating: RISK_RATINGS.includes(riskRating) ? riskRating : "MEDIUM",
           responsibleTeamId: "",
           picId: "",
+          reviewerId: "",
           dueDate: "",
           evidenceRequired,
           reviewRequired,
@@ -855,6 +860,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       riskRating: "MEDIUM",
       responsibleTeamId: "",
       picId: "",
+      reviewerId: "",
       dueDate: "",
       evidenceRequired: selectedTeam?.evidenceRequired || false,
       reviewRequired: selectedTeam?.approvalRequired || true,
@@ -870,6 +876,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       riskRating: "MEDIUM",
       responsibleTeamId: "",
       picId: "",
+      reviewerId: "",
       dueDate: "",
       evidenceRequired: selectedTeam?.evidenceRequired || false,
       reviewRequired: selectedTeam?.approvalRequired || true,
@@ -909,6 +916,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       riskRating: "MEDIUM",
       responsibleTeamId: "",
       picId: "",
+      reviewerId: "",
       dueDate: "",
       evidenceRequired: selectedTeam?.evidenceRequired || false,
       reviewRequired: selectedTeam?.approvalRequired || true,
@@ -943,6 +951,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       riskRating: "MEDIUM",
       responsibleTeamId: "",
       picId: "",
+      reviewerId: "",
       dueDate: "",
       evidenceRequired: selectedTeam?.evidenceRequired || false,
       reviewRequired: selectedTeam?.approvalRequired || true,
@@ -1375,32 +1384,32 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
             item: {
               reference: item.reference,
               title: item.title,
-              description: item.description || "",
-              parentId: null,
+              description: item.description || undefined,
+              parentId: undefined,
               sortOrder: 0,
             },
             // For each task definition, create one task per entity
             tasks: item.tasks.flatMap((task) =>
               selectedEntityIds.map((entityId) => ({
                 name: task.name,
-                description: task.description || "",
-                expectedOutcome: task.expectedOutcome || "",
+                description: task.description || undefined,
+                expectedOutcome: task.expectedOutcome || undefined,
                 entityId, // One task per entity
                 frequency: task.frequency,
-                quarter: task.quarter || "",
+                quarter: task.quarter || undefined,
                 riskRating: task.riskRating,
-                responsibleTeamId: task.responsibleTeamId || "",
-                picId: task.picId || "",
-                reviewerId: task.reviewerId || "",
-                startDate: task.startDate || "",
-                dueDate: task.dueDate || "",
-                testingPeriodStart: "",
-                testingPeriodEnd: "",
+                responsibleTeamId: task.responsibleTeamId || undefined,
+                picId: task.picId || undefined,
+                reviewerId: task.reviewerId || undefined,
+                startDate: task.startDate || undefined,
+                dueDate: task.dueDate || undefined,
+                testingPeriodStart: undefined,
+                testingPeriodEnd: undefined,
                 evidenceRequired: task.evidenceRequired,
                 narrativeRequired: selectedTeam?.narrativeRequired || false,
                 reviewRequired: task.reviewRequired,
-                clickupUrl: task.clickupUrl || "",
-                gdriveUrl: task.gdriveUrl || "",
+                clickupUrl: task.clickupUrl || undefined,
+                gdriveUrl: task.gdriveUrl || undefined,
               }))
             ),
           })),

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, CheckSquare, FileText, AlertTriangle, BarChart3, Clock, Settings, ChevronDown, Globe } from "lucide-react";
+import { LayoutDashboard, BookOpen, CheckSquare, Calendar, FileText, AlertTriangle, BarChart3, Clock, Settings, ChevronDown, Globe } from "lucide-react";
 import { useEntity } from "@/contexts/EntityContext";
 
 type SidebarProps = {
@@ -24,6 +24,7 @@ const NAV_ITEMS = [
   { href: "/", label: "Overview", icon: LayoutDashboard, section: "main" },
   { href: "/sources", label: "Sources", icon: BookOpen, section: "manage" },
   { href: "/tasks", label: "Task Tracker", icon: CheckSquare, section: "manage" },
+  { href: "/calendar", label: "Calendar", icon: Calendar, section: "manage" },
   { href: "/reviews", label: "Review Queue", icon: FileText, section: "manage", badge: 0 },
   { href: "/findings", label: "Findings", icon: AlertTriangle, section: "manage", badge: 0 },
   { href: "/reports", label: "Reports", icon: BarChart3, section: "insights" },

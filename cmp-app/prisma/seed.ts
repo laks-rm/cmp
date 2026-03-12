@@ -7,6 +7,7 @@ const MODULES = [
   "DASHBOARD",
   "SOURCES",
   "TASKS",
+  "CALENDAR",
   "TASK_EXECUTION",
   "REVIEW_QUEUE",
   "FINDINGS",
@@ -23,7 +24,7 @@ const MODULES = [
 const ACTIONS = ["VIEW", "CREATE", "EDIT", "DELETE", "APPROVE", "EXPORT", "ADMIN_CONFIG"] as const;
 
 const ADMIN_MODULES = new Set(["USER_MANAGEMENT", "ROLE_MANAGEMENT", "ENTITY_CONFIG", "TEAM_CONFIG", "WORKFLOW_CONFIG", "NOTIFICATION_CONFIG"]);
-const CORE_MODULES = new Set(["DASHBOARD", "SOURCES", "TASKS", "TASK_EXECUTION", "REVIEW_QUEUE", "FINDINGS", "REPORTS", "AUDIT_LOG"]);
+const CORE_MODULES = new Set(["DASHBOARD", "SOURCES", "TASKS", "CALENDAR", "TASK_EXECUTION", "REVIEW_QUEUE", "FINDINGS", "REPORTS", "AUDIT_LOG"]);
 
 function managerGrant(module: string, action: string): boolean {
   if (action === "ADMIN_CONFIG") {
@@ -49,7 +50,7 @@ function analystGrant(module: string, action: string): boolean {
 }
 
 function executorGrant(module: string, action: string): boolean {
-  if ((module === "DASHBOARD" || module === "TASKS") && action === "VIEW") {
+  if ((module === "DASHBOARD" || module === "TASKS" || module === "CALENDAR") && action === "VIEW") {
     return true;
   }
   if (module === "TASK_EXECUTION" && action === "EDIT") {

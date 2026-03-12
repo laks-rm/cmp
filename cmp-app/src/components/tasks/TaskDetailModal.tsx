@@ -14,6 +14,13 @@ import {
   Send,
   Info,
   Download,
+  CheckCircle2,
+  Circle,
+  Eye,
+  FileEdit,
+  Paperclip,
+  Play,
+  RotateCcw,
 } from "lucide-react";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { EntityBadge } from "@/components/ui/EntityBadge";
@@ -68,8 +75,14 @@ type Task = {
   narrative: string | null;
   evidenceRequired: boolean;
   narrativeRequired: boolean;
+  reviewRequired: boolean;
   clickupUrl: string | null;
   gdriveUrl: string | null;
+  completedAt: string | null;
+  recurrenceGroupId: string | null;
+  recurrenceIndex: number | null;
+  recurrenceTotalCount: number | null;
+  plannedDate: string | null;
   source: {
     id: string;
     name: string;
@@ -107,6 +120,9 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
+  const [recurrenceTasks, setRecurrenceTasks] = useState<Task[]>([]);
+  const [reviewers, setReviewers] = useState<User[]>([]);
+  const [selectedReviewerId, setSelectedReviewerId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"details" | "evidence" | "comments" | "history">("details");
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -137,11 +153,12 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
   const fetchTaskData = async () => {
     try {
       setLoading(true);
-      const [taskRes, evidenceRes, commentsRes, auditRes] = await Promise.all([
+      const [taskRes, evidenceRes, commentsRes, auditRes, reviewersRes] = await Promise.all([
         fetch(`/api/tasks/${taskId}`),
         fetch(`/api/evidence?taskId=${taskId}`),
         fetch(`/api/comments?taskId=${taskId}`),
         fetch(`/api/audit-log?targetType=Task&targetId=${taskId}`),
+        fetch(`/api/users/reviewers`),
       ]);
 
       if (!taskRes.ok) throw new Error("Failed to fetch task");
@@ -149,10 +166,21 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
       const taskData = await taskRes.json();
       setTask(taskData);
       setNarrative(taskData.narrative || "");
+      setSelectedReviewerId(taskData.reviewerId || "");
 
       if (evidenceRes.ok) setEvidence(await evidenceRes.json());
       if (commentsRes.ok) setComments(await commentsRes.json());
       if (auditRes.ok) setAuditLog(await auditRes.json());
+      if (reviewersRes.ok) setReviewers(await reviewersRes.json());
+
+      // Fetch recurrence group tasks if this task belongs to a recurrence group
+      if (taskData.recurrenceGroupId) {
+        const recurrenceRes = await fetch(`/api/tasks?recurrenceGroupId=${taskData.recurrenceGroupId}&limit=100`);
+        if (recurrenceRes.ok) {
+          const recurrenceData = await recurrenceRes.json();
+          setRecurrenceTasks(recurrenceData.tasks || []);
+        }
+      }
     } catch (error) {
       console.error("Error fetching task data:", error);
       toast.error("Failed to load task details");
@@ -271,6 +299,27 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
 
   const handleTaskAction = async (action: string, comment?: string) => {
     try {
+      // Validation for submit actions
+      if (action === "submit-review" || action === "mark-complete") {
+        // Check reviewer assignment for submit-review
+        if (action === "submit-review" && !task?.reviewerId) {
+          toast.error("Please assign a reviewer before submitting");
+          return;
+        }
+
+        // Check evidence requirement
+        if (task?.evidenceRequired && evidence.length === 0) {
+          toast.error("Please upload evidence before submitting");
+          return;
+        }
+
+        // Check narrative requirement
+        if (task?.narrativeRequired && !narrative.trim()) {
+          toast.error("Please add a narrative before submitting");
+          return;
+        }
+      }
+
       const res = await fetch(`/api/tasks/${taskId}/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -282,14 +331,70 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
         throw new Error(error.error || "Action failed");
       }
 
-      const updatedTask = await res.json();
-      setTask(updatedTask);
-      toast.success(`Task ${action.replace("-", " ")}`);
+      // Custom success messages
+      if (action === "submit-review") {
+        toast.success("Task submitted for review");
+      } else if (action === "mark-complete") {
+        toast.success("Task marked as complete");
+      } else if (action === "approve") {
+        toast.success("Task approved");
+      } else if (action === "request-changes") {
+        toast.success("Changes requested");
+      } else if (action === "recall") {
+        toast.success("Task recalled");
+      } else {
+        toast.success(`Task ${action.replace("-", " ")}`);
+      }
+      
+      // Refresh all task data after successful action
+      await fetchTaskData();
       if (onTaskUpdated) onTaskUpdated();
-      fetchTaskData(); // Refresh all data
     } catch (error) {
       console.error(`Action ${action} error:`, error);
       toast.error(error instanceof Error ? error.message : "Action failed");
+    }
+  };
+
+  const handleStartTask = async () => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "IN_PROGRESS" }),
+      });
+
+      if (!res.ok) throw new Error("Failed to start task");
+
+      toast.success("Task started");
+      
+      // Refresh all task data after successful start
+      await fetchTaskData();
+      if (onTaskUpdated) onTaskUpdated();
+    } catch (error) {
+      console.error("Start task error:", error);
+      toast.error("Failed to start task");
+    }
+  };
+
+  const handleReviewerChange = async (newReviewerId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewerId: newReviewerId || null }),
+      });
+
+      if (!res.ok) throw new Error("Failed to update reviewer");
+
+      setSelectedReviewerId(newReviewerId);
+      toast.success("Reviewer updated");
+      
+      // Refresh task data
+      await fetchTaskData();
+      if (onTaskUpdated) onTaskUpdated();
+    } catch (error) {
+      console.error("Update reviewer error:", error);
+      toast.error("Failed to update reviewer");
     }
   };
 
@@ -312,10 +417,25 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
 
   const isOverdue = task?.dueDate && new Date(task.dueDate) < new Date() && task.status !== "COMPLETED";
   const isAssignee = task?.assigneeId === session?.user.userId;
+  const isPIC = task?.picId === session?.user.userId;
   const isReviewer = task?.reviewerId === session?.user.userId;
   const isPendingReview = task?.status === "PENDING_REVIEW";
   const isInProgress = task?.status === "IN_PROGRESS";
-  const requiresApproval = task?.source?.team?.approvalRequired ?? true;
+  const isToDo = task?.status === "TO_DO";
+  const isCompleted = task?.status === "COMPLETED";
+  const isDeferred = task?.status === "DEFERRED";
+  const isNotApplicable = task?.status === "NOT_APPLICABLE";
+  const reviewRequired = task?.reviewRequired ?? true;
+
+  // Check if user can act on this task (assignee or PIC)
+  const canActOnTask = isAssignee || isPIC;
+
+  // Requirement checks
+  const evidenceMet = !task?.evidenceRequired || evidence.length > 0;
+  const narrativeMet = !task?.narrativeRequired || narrative.trim().length > 0;
+  
+  // Field editability
+  const canUploadEvidence = isAssignee && (isInProgress || isToDo);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)" }}>
@@ -401,10 +521,22 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                     }}
                   >
                     {tab}
-                    {tab === "evidence" && evidence.length > 0 && (
-                      <span className="ml-1.5 rounded-full px-1.5 py-0.5 text-xs" style={{ backgroundColor: "var(--bg-muted)", color: "var(--text-secondary)" }}>
-                        {evidence.length}
-                      </span>
+                    {tab === "evidence" && (
+                      <>
+                        {evidence.length > 0 && (
+                          <span className="ml-1.5 rounded-full px-1.5 py-0.5 text-xs" style={{ backgroundColor: "var(--bg-muted)", color: "var(--text-secondary)" }}>
+                            {evidence.length}
+                          </span>
+                        )}
+                        {task?.evidenceRequired && evidence.length === 0 && (
+                          <span className="ml-1.5 rounded-full px-1.5 py-0.5 text-xs font-medium" style={{ backgroundColor: "var(--red-light)", color: "var(--red)" }}>
+                            Required
+                          </span>
+                        )}
+                        {task?.evidenceRequired && evidence.length > 0 && (
+                          <CheckCircle2 size={14} className="ml-1 inline-block" style={{ color: "var(--green)" }} />
+                        )}
+                      </>
                     )}
                     {tab === "comments" && comments.length > 0 && (
                       <span className="ml-1.5 rounded-full px-1.5 py-0.5 text-xs" style={{ backgroundColor: "var(--bg-muted)", color: "var(--text-secondary)" }}>
@@ -462,6 +594,49 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                         </div>
                       ) : (
                         <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not assigned</span>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                        Reviewer {reviewRequired && <span style={{ color: "var(--red)" }}>*</span>}
+                      </label>
+                      {(isToDo || isInProgress) && reviewRequired ? (
+                        <select
+                          value={selectedReviewerId}
+                          onChange={(e) => handleReviewerChange(e.target.value)}
+                          className="w-full rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none"
+                          style={{
+                            borderColor: "var(--border)",
+                            backgroundColor: "white",
+                            color: "var(--text-primary)",
+                          }}
+                          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--blue)")}
+                          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+                        >
+                          <option value="">Select reviewer...</option>
+                          {reviewers.map((reviewer) => (
+                            <option key={reviewer.id} value={reviewer.id}>
+                              {reviewer.name} ({reviewer.role?.displayName || "Unknown Role"})
+                            </option>
+                          ))}
+                        </select>
+                      ) : task.reviewer ? (
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
+                            style={{ background: task.reviewer.avatarColor || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
+                          >
+                            {task.reviewer.initials}
+                          </div>
+                          <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                            {task.reviewer.name}
+                          </span>
+                        </div>
+                      ) : reviewRequired ? (
+                        <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not assigned</span>
+                      ) : (
+                        <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not required</span>
                       )}
                     </div>
 
@@ -548,6 +723,82 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                     )}
                   </div>
 
+                  {/* Requirements Checklist - Only show for TO_DO or IN_PROGRESS */}
+                  {(isToDo || isInProgress) && (
+                    <div className="rounded-lg border p-4" style={{ backgroundColor: "var(--bg-subtle)", borderColor: "var(--border)" }}>
+                      <h4 className="mb-3 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                        Task Requirements
+                      </h4>
+                      <div className="space-y-2.5">
+                        {/* Evidence requirement */}
+                        <div className="flex items-start gap-3">
+                          {task.evidenceRequired ? (
+                            evidenceMet ? (
+                              <CheckCircle2 size={18} className="mt-0.5 flex-shrink-0" style={{ color: "var(--green)" }} />
+                            ) : (
+                              <Circle size={18} className="mt-0.5 flex-shrink-0" style={{ color: "var(--red)" }} />
+                            )
+                          ) : (
+                            <Paperclip size={18} className="mt-0.5 flex-shrink-0" style={{ color: "var(--text-faint)" }} />
+                          )}
+                          <div className="flex-1">
+                            <p className="text-sm" style={{ color: task.evidenceRequired ? "var(--text-primary)" : "var(--text-muted)" }}>
+                              {task.evidenceRequired ? (
+                                <>
+                                  <span className="font-medium">Evidence upload required</span>
+                                  {evidenceMet && <span className="ml-2 text-xs" style={{ color: "var(--green)" }}>({evidence.length} file{evidence.length !== 1 ? 's' : ''} uploaded)</span>}
+                                  {!evidenceMet && <span className="ml-2 text-xs" style={{ color: "var(--red)" }}>(Not yet uploaded)</span>}
+                                </>
+                              ) : (
+                                "Evidence upload — optional"
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Narrative requirement */}
+                        <div className="flex items-start gap-3">
+                          {task.narrativeRequired ? (
+                            narrativeMet ? (
+                              <CheckCircle2 size={18} className="mt-0.5 flex-shrink-0" style={{ color: "var(--green)" }} />
+                            ) : (
+                              <Circle size={18} className="mt-0.5 flex-shrink-0" style={{ color: "var(--red)" }} />
+                            )
+                          ) : (
+                            <FileEdit size={18} className="mt-0.5 flex-shrink-0" style={{ color: "var(--text-faint)" }} />
+                          )}
+                          <div className="flex-1">
+                            <p className="text-sm" style={{ color: task.narrativeRequired ? "var(--text-primary)" : "var(--text-muted)" }}>
+                              {task.narrativeRequired ? (
+                                <>
+                                  <span className="font-medium">Narrative required</span>
+                                  {narrativeMet && <span className="ml-2 text-xs" style={{ color: "var(--green)" }}>(Completed)</span>}
+                                  {!narrativeMet && <span className="ml-2 text-xs" style={{ color: "var(--red)" }}>(Not yet filled)</span>}
+                                </>
+                              ) : (
+                                "Narrative — optional"
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Review requirement */}
+                        <div className="flex items-start gap-3">
+                          <Eye size={18} className="mt-0.5 flex-shrink-0" style={{ color: reviewRequired ? "var(--blue)" : "var(--text-faint)" }} />
+                          <div className="flex-1">
+                            <p className="text-sm" style={{ color: reviewRequired ? "var(--text-primary)" : "var(--text-muted)" }}>
+                              {reviewRequired ? (
+                                <span className="font-medium">Review required — will be sent to reviewer for approval after submission</span>
+                              ) : (
+                                "No review needed — task will be marked complete on submission"
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Description */}
                   {task.description && (
                     <div>
@@ -572,6 +823,64 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                     </div>
                   )}
 
+                  {/* Recurrence Information */}
+                  {task.recurrenceGroupId && recurrenceTasks.length > 0 && (
+                    <div>
+                      <label className="mb-2 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                        Recurrence
+                      </label>
+                      <div className="rounded-lg border p-4" style={{ backgroundColor: "var(--bg-subtle)", borderColor: "var(--border)" }}>
+                        <p className="mb-3 text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                          {task.frequency.replace("_", " ")} task — instance {task.recurrenceIndex} of {task.recurrenceTotalCount} ({task.quarter || format(new Date(task.plannedDate || task.dueDate || ""), "MMM yyyy")})
+                        </p>
+                        <div className="flex items-center gap-2 overflow-x-auto pb-2">
+                          {recurrenceTasks
+                            .sort((a, b) => (a.recurrenceIndex || 0) - (b.recurrenceIndex || 0))
+                            .map((recTask) => {
+                              const isCurrent = recTask.id === task.id;
+                              const isCompleted = recTask.status === "COMPLETED";
+                              const isPlanned = recTask.status === "PLANNED";
+                              
+                              return (
+                                <div
+                                  key={recTask.id}
+                                  className="flex flex-col items-center gap-1 rounded-lg border p-2"
+                                  style={{
+                                    borderColor: isCurrent ? "var(--blue)" : "var(--border)",
+                                    backgroundColor: isCurrent ? "var(--blue-light)" : "white",
+                                    minWidth: "80px",
+                                  }}
+                                  title={`${recTask.quarter || ""} - ${recTask.status}`}
+                                >
+                                  <div
+                                    className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold"
+                                    style={{
+                                      backgroundColor: isCompleted
+                                        ? "var(--green)"
+                                        : isPlanned
+                                        ? "#E8EAED"
+                                        : isCurrent
+                                        ? "var(--blue)"
+                                        : "#F1F3F8",
+                                      color: isCompleted || isCurrent ? "white" : "#5F6368",
+                                    }}
+                                  >
+                                    {isCompleted ? "✓" : recTask.recurrenceIndex}
+                                  </div>
+                                  <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                                    {recTask.quarter || format(new Date(recTask.plannedDate || recTask.dueDate || ""), "MMM")}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                        </div>
+                        <p className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
+                          View other instances in the Calendar
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Narrative */}
                   <div>
                     <label className="mb-2 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
@@ -582,10 +891,11 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                       onChange={(e) => setNarrative(e.target.value)}
                       placeholder="Add execution notes, context, or observations..."
                       rows={4}
-                      className="w-full rounded-lg border px-4 py-3 text-sm transition-colors focus:outline-none"
+                      disabled={isToDo || isPendingReview || isCompleted || !isAssignee}
+                      className="w-full rounded-lg border px-4 py-3 text-sm transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                       style={{
                         borderColor: "var(--border)",
-                        backgroundColor: "white",
+                        backgroundColor: (isToDo || isPendingReview || isCompleted || !isAssignee) ? "var(--bg-subtle)" : "white",
                         color: "var(--text-primary)",
                       }}
                       onFocus={(e) => (e.currentTarget.style.borderColor = "var(--blue)")}
@@ -594,6 +904,11 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                         handleNarrativeBlur();
                       }}
                     />
+                    {isToDo && !canActOnTask && (
+                      <p className="mt-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
+                        Task must be started before editing
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -601,32 +916,41 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
               {activeTab === "evidence" && (
                 <div className="space-y-4">
                   {/* Upload zone */}
-                  <div
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors"
-                    style={{
-                      borderColor: isDragging ? "var(--blue)" : "var(--border)",
-                      backgroundColor: isDragging ? "var(--blue-light)" : "var(--bg-subtle)",
-                    }}
-                  >
-                    <Upload size={32} className="mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
-                    <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                      {uploading ? "Uploading..." : "Drop files here or click to browse"}
-                    </p>
-                    <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-                      Max 10MB per file {!task?.evidenceRequired && "(optional)"}
-                    </p>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      className="hidden"
-                      onChange={(e) => handleFileUpload(e.target.files)}
-                      disabled={uploading}
-                    />
-                  </div>
+                  {canUploadEvidence ? (
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors"
+                      style={{
+                        borderColor: isDragging ? "var(--blue)" : "var(--border)",
+                        backgroundColor: isDragging ? "var(--blue-light)" : "var(--bg-subtle)",
+                      }}
+                    >
+                      <Upload size={32} className="mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
+                      <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                        {uploading ? "Uploading..." : "Drop files here or click to browse"}
+                      </p>
+                      <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                        Max 10MB per file {!task?.evidenceRequired && "(optional)"}
+                      </p>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => handleFileUpload(e.target.files)}
+                        disabled={uploading}
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border-2 border-dashed p-8 text-center" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
+                      <Upload size={32} className="mx-auto mb-3" style={{ color: "var(--text-faint)" }} />
+                      <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
+                        {isToDo ? "Start the task to upload evidence" : "Evidence upload is disabled"}
+                      </p>
+                    </div>
+                  )}
 
                   {/* Evidence list */}
                   {evidence.length > 0 ? (
@@ -823,9 +1147,140 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
             </div>
 
             {/* Footer Actions */}
-            <div className="border-t p-4" style={{ borderColor: "var(--border)" }}>
-              <div className="flex items-center justify-between">
-                <div className="flex gap-2">
+            <div className="border-t" style={{ borderColor: "var(--border)" }}>
+              {/* Primary Action Bar - Status-based actions */}
+              <div className="border-b p-4" style={{ borderColor: "var(--border-light)" }}>
+                {/* TO_DO: Start Task */}
+                {isToDo && canActOnTask && (
+                  <button
+                    onClick={handleStartTask}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg px-6 py-3 text-base font-semibold text-white transition-opacity"
+                    style={{ backgroundColor: "var(--blue)" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+                    onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                  >
+                    <Play size={20} />
+                    Start Task
+                  </button>
+                )}
+
+                {/* TO_DO: No access message */}
+                {isToDo && !canActOnTask && (
+                  <div className="rounded-lg p-3 text-center text-sm" style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-muted)" }}>
+                    Only the assignee or person in charge can start this task
+                  </div>
+                )}
+
+                {/* IN_PROGRESS: Submit buttons */}
+                {isInProgress && canActOnTask && (
+                  <div className="flex gap-3">
+                    {reviewRequired ? (
+                      <button
+                        onClick={() => handleTaskAction("submit-review")}
+                        className="flex flex-1 items-center justify-center gap-2 rounded-lg px-6 py-3 text-base font-semibold text-white transition-opacity"
+                        style={{ backgroundColor: "var(--blue)" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                      >
+                        Submit for Review
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleTaskAction("mark-complete")}
+                        className="flex flex-1 items-center justify-center gap-2 rounded-lg px-6 py-3 text-base font-semibold text-white transition-opacity"
+                        style={{ backgroundColor: "var(--green)" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                      >
+                        <CheckCircle2 size={20} />
+                        Mark as Complete
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* PENDING_REVIEW: Reviewer actions */}
+                {isPendingReview && isReviewer && (
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        const comment = prompt("Reason for requesting changes (optional):");
+                        if (comment !== null) handleTaskAction("request-changes", comment);
+                      }}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg px-6 py-3 text-base font-semibold transition-colors"
+                      style={{ backgroundColor: "var(--amber-light)", color: "var(--amber)" }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "var(--amber)";
+                        e.currentTarget.style.color = "white";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "var(--amber-light)";
+                        e.currentTarget.style.color = "var(--amber)";
+                      }}
+                    >
+                      <RotateCcw size={20} />
+                      Request Changes
+                    </button>
+                    <button
+                      onClick={() => handleTaskAction("approve")}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg px-6 py-3 text-base font-semibold text-white transition-opacity"
+                      style={{ backgroundColor: "var(--green)" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                    >
+                      <CheckCircle2 size={20} />
+                      Approve
+                    </button>
+                  </div>
+                )}
+
+                {/* PENDING_REVIEW: Non-reviewer message */}
+                {isPendingReview && !isReviewer && (
+                  <div className="rounded-lg p-3 text-center text-sm" style={{ backgroundColor: "var(--amber-light)", color: "var(--amber)" }}>
+                    <Clock size={16} className="mx-auto mb-1" />
+                    Awaiting review by {task.reviewer?.name || "reviewer"}
+                  </div>
+                )}
+
+                {/* PENDING_REVIEW: Recall option for assignee */}
+                {isPendingReview && isAssignee && (
+                  <button
+                    onClick={() => handleTaskAction("recall")}
+                    className="mt-2 w-full rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+                    style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-secondary)" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-muted)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
+                  >
+                    Recall Submission
+                  </button>
+                )}
+
+                {/* COMPLETED: Success message */}
+                {isCompleted && (
+                  <div className="flex items-center justify-center gap-2 rounded-lg p-3 text-base font-semibold" style={{ backgroundColor: "var(--green-light)", color: "var(--green)" }}>
+                    <CheckCircle2 size={20} />
+                    Completed {task.completedAt && `on ${format(new Date(task.completedAt), "MMM d, yyyy")}`}
+                  </div>
+                )}
+
+                {/* DEFERRED: Status message */}
+                {isDeferred && (
+                  <div className="rounded-lg p-3 text-center text-sm font-medium" style={{ backgroundColor: "var(--purple-light)", color: "var(--purple)" }}>
+                    Task Deferred
+                  </div>
+                )}
+
+                {/* NOT_APPLICABLE: Status message */}
+                {isNotApplicable && (
+                  <div className="rounded-lg p-3 text-center text-sm font-medium" style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-muted)" }}>
+                    Task Not Applicable
+                  </div>
+                )}
+              </div>
+
+              {/* Secondary Actions - Raise Finding */}
+              {(isInProgress || isCompleted) && (
+                <div className="p-4">
                   <button
                     className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
                     style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-secondary)" }}
@@ -836,81 +1291,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                     Raise Finding
                   </button>
                 </div>
-
-                <div className="flex gap-2">
-                  {/* Recall button (assignee, pending review) */}
-                  {isAssignee && isPendingReview && (
-                    <button
-                      onClick={() => handleTaskAction("recall")}
-                      className="rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-                      style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-secondary)" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-muted)")}
-                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
-                    >
-                      Recall
-                    </button>
-                  )}
-
-                  {/* Submit for review (assignee, in progress, requires approval) */}
-                  {isAssignee && isInProgress && requiresApproval && (
-                    <button
-                      onClick={() => handleTaskAction("submit-review")}
-                      className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity"
-                      style={{ backgroundColor: "var(--blue)" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
-                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                    >
-                      Submit for Review
-                    </button>
-                  )}
-
-                  {/* Mark complete (assignee/pic, in progress, no approval required) */}
-                  {(isAssignee || task?.pic?.id === session?.user.userId) && isInProgress && !requiresApproval && (
-                    <button
-                      onClick={() => handleTaskAction("mark-complete")}
-                      className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity"
-                      style={{ backgroundColor: "var(--green)" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
-                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                    >
-                      Mark Complete
-                    </button>
-                  )}
-
-                  {/* Request changes & Approve (reviewer, pending review) */}
-                  {isReviewer && isPendingReview && (
-                    <>
-                      <button
-                        onClick={() => {
-                          const comment = prompt("Reason for requesting changes (optional):");
-                          if (comment !== null) handleTaskAction("request-changes", comment);
-                        }}
-                        className="rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-                        style={{ backgroundColor: "var(--amber-light)", color: "var(--amber)" }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = "var(--amber)";
-                          e.currentTarget.style.color = "white";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = "var(--amber-light)";
-                          e.currentTarget.style.color = "var(--amber)";
-                        }}
-                      >
-                        Request Changes
-                      </button>
-                      <button
-                        onClick={() => handleTaskAction("approve")}
-                        className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity"
-                        style={{ backgroundColor: "var(--green)" }}
-                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
-                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                      >
-                        Approve
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
           </>
         )}
