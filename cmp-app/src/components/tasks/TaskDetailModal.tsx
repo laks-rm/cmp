@@ -372,7 +372,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                   <Info size={20} style={{ color: "var(--blue)", flexShrink: 0, marginTop: 2 }} />
                   <div className="flex-1">
                     <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                      <strong>Assignee</strong> executes the task. <strong>Person in Charge (PIC)</strong> monitors progress and ensures completion.
+                      <strong>Department / Team Responsible</strong> executes the task. <strong>Person in Charge (PIC)</strong> oversees completion and ensures timely delivery.
                     </p>
                   </div>
                   <button
@@ -428,7 +428,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                        Assignee
+                        Department / Team Responsible
                       </label>
                       {task.assignee ? (
                         <div className="flex items-center gap-2">
@@ -443,7 +443,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                           </span>
                         </div>
                       ) : (
-                        <span className="text-sm" style={{ color: "var(--text-muted)" }}>Unassigned</span>
+                        <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not assigned</span>
                       )}
                     </div>
 

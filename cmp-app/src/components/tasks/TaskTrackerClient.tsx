@@ -150,7 +150,7 @@ const TaskRow = memo(
             </div>
           ) : (
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-              Unassigned
+              Not assigned
             </span>
           )}
         </td>
@@ -496,7 +496,7 @@ export function TaskTrackerClient() {
               className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white"
               style={{ borderColor: "var(--blue)", color: "var(--blue)", backgroundColor: "transparent" }}
             >
-              Assign to...
+              Set Responsible...
             </button>
             <button
               className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white"
@@ -544,7 +544,7 @@ export function TaskTrackerClient() {
                   Risk
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Assignee
+                  Responsible
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
                   Freq / Quarter
