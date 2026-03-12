@@ -36,6 +36,7 @@ export const createTaskSchema = z.object({
   sourceItemId: z.string().uuid().optional(),
   entityId: z.string().uuid(),
   assigneeId: z.string().uuid().optional(),
+  responsibleTeamId: z.string().uuid().optional(),
   picId: z.string().uuid().optional(),
   reviewerId: z.string().uuid().optional(),
 });
@@ -46,8 +47,9 @@ export const updateTaskSchema = createTaskSchema.partial().extend({
 
 export const bulkTaskSchema = z.object({
   taskIds: z.array(z.string().uuid()).min(1),
-  action: z.enum(["assign", "changeStatus", "setDueDate"]),
+  action: z.enum(["assign", "changeStatus", "setDueDate", "setResponsibleTeam"]),
   assigneeId: z.string().uuid().optional(),
+  responsibleTeamId: z.string().uuid().optional(),
   status: z.enum(["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED", "DEFERRED", "NOT_APPLICABLE"]).optional(),
   dueDate: z.string().datetime().optional(),
 });

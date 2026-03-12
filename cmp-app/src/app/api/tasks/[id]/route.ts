@@ -36,6 +36,12 @@ export async function GET(req: NextRequest, context: { params: { id: string } })
             avatarColor: true,
           },
         },
+        responsibleTeam: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         pic: {
           select: {
             id: true,

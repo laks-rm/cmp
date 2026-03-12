@@ -104,6 +104,7 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
               quarter: taskData.quarter,
               riskRating: taskData.riskRating,
               assigneeId: taskData.assigneeId,
+              responsibleTeamId: taskData.responsibleTeamId,
               picId: taskData.picId,
               reviewerId: taskData.reviewerId,
               startDate: taskData.startDate ? new Date(taskData.startDate) : null,

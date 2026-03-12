@@ -44,6 +44,7 @@ export const createTaskForSourceSchema = z.object({
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]).optional(),
   riskRating: z.enum(["HIGH", "MEDIUM", "LOW"]),
   assigneeId: z.string().uuid().optional(),
+  responsibleTeamId: z.string().uuid().optional(),
   picId: z.string().uuid().optional(),
   reviewerId: z.string().uuid().optional(),
   startDate: z.string().optional(),

@@ -90,6 +90,12 @@ export async function GET(req: NextRequest) {
               avatarColor: true,
             },
           },
+          responsibleTeam: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
           pic: {
             select: {
               id: true,

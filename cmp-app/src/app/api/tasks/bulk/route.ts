@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     await requirePermission(session, "TASKS", "EDIT");
 
     const body = await req.json();
-    const { taskIds, action, assigneeId, status, dueDate } = bulkTaskSchema.parse(body);
+    const { taskIds, action, assigneeId, responsibleTeamId, status, dueDate } = bulkTaskSchema.parse(body);
 
     const tasks = await prisma.task.findMany({
       where: {
@@ -45,6 +45,23 @@ export async function POST(req: NextRequest) {
             details: {
               oldAssigneeId: task.assigneeId,
               newAssigneeId: assigneeId,
+              bulkOperation: true,
+            },
+          });
+        }
+
+        if (action === "setResponsibleTeam" && responsibleTeamId) {
+          updates.responsibleTeamId = responsibleTeamId;
+          await logAuditEvent({
+            action: "TASK_RESPONSIBLE_TEAM_SET",
+            module: "TASKS",
+            userId: session.user.userId,
+            entityId: task.entityId,
+            targetType: "Task",
+            targetId: task.id,
+            details: {
+              oldResponsibleTeamId: task.responsibleTeamId,
+              newResponsibleTeamId: responsibleTeamId,
               bulkOperation: true,
             },
           });

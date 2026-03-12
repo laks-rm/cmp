@@ -176,7 +176,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     taskName: string;
     frequency: string;
     riskRating: string;
-    assigneeId: string;
+    responsibleTeamId: string;
     picId: string;
     dueDate: string;
     isClauseRow: boolean;
@@ -196,7 +196,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       taskName: "",
       frequency: "MONTHLY",
       riskRating: "MEDIUM",
-      assigneeId: "",
+      responsibleTeamId: "",
       picId: "",
       dueDate: "",
       isClauseRow: true,
@@ -209,7 +209,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       taskName: "",
       frequency: "MONTHLY",
       riskRating: "MEDIUM",
-      assigneeId: "",
+      responsibleTeamId: "",
       picId: "",
       dueDate: "",
       isClauseRow: false,
@@ -260,7 +260,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           taskName: "",
           frequency: "MONTHLY",
           riskRating: "MEDIUM",
-          assigneeId: "",
+          responsibleTeamId: "",
           picId: "",
           dueDate: "",
           isClauseRow: true,
@@ -292,7 +292,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
               name: task.taskName,
               description: "",
               expectedOutcome: "",
-              assigneeId: task.assigneeId,
+              responsibleTeamId: task.responsibleTeamId,
               picId: task.picId,
               reviewerId: "",
               frequency: task.frequency,
@@ -324,6 +324,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     taskDescription: "",
     expectedOutcome: "",
     assigneeId: "",
+    responsibleTeamId: "",
     picId: "",
     reviewerId: "",
     frequency: defaultFrequency,
@@ -341,6 +342,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     taskDescription: "",
     expectedOutcome: "",
     assigneeId: "",
+    responsibleTeamId: "",
     picId: "",
     reviewerId: "",
     frequency: defaultFrequency,
@@ -754,6 +756,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
             description: "",
             expectedOutcome: "",
             assigneeId: "",
+    responsibleTeamId: "",
             picId: "",
             reviewerId: "",
             frequency: task.frequency,
@@ -804,6 +807,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           frequency: FREQUENCIES.includes(frequency) ? frequency : "MONTHLY",
           riskRating: RISK_RATINGS.includes(riskRating) ? riskRating : "MEDIUM",
           assigneeId: "",
+    responsibleTeamId: "",
           picId: "",
           dueDate: "",
           isClauseRow: isNewClause,
@@ -828,6 +832,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       frequency: defaultFrequency,
       riskRating: "MEDIUM",
       assigneeId: "",
+    responsibleTeamId: "",
       picId: "",
       dueDate: "",
       isClauseRow: true,
@@ -841,6 +846,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       frequency: defaultFrequency,
       riskRating: "MEDIUM",
       assigneeId: "",
+    responsibleTeamId: "",
       picId: "",
       dueDate: "",
       isClauseRow: false,
@@ -878,6 +884,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       frequency: defaultFrequency,
       riskRating: "MEDIUM",
       assigneeId: "",
+    responsibleTeamId: "",
       picId: "",
       dueDate: "",
       isClauseRow: false,
@@ -910,6 +917,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       frequency: defaultFrequency,
       riskRating: "MEDIUM",
       assigneeId: "",
+    responsibleTeamId: "",
       picId: "",
       dueDate: "",
       isClauseRow: false,
@@ -1047,6 +1055,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       taskDescription: "",
       expectedOutcome: "",
       assigneeId: "",
+    responsibleTeamId: "",
       picId: "",
       reviewerId: "",
       frequency: defaultFrequency,
@@ -1147,6 +1156,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           taskDescription: "",
           expectedOutcome: "",
           assigneeId: "",
+    responsibleTeamId: "",
           picId: "",
           reviewerId: "",
           frequency: defaultFrequency,
@@ -1204,6 +1214,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       taskDescription: "",
       expectedOutcome: "",
       assigneeId: "",
+    responsibleTeamId: "",
       picId: "",
       reviewerId: "",
       frequency: defaultFrequency,
@@ -1222,17 +1233,17 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
   };
 
   // Bulk action handlers for Step 3
-  const handleBulkAssign = (userId: string) => {
+  const handleBulkAssign = (teamId: string) => {
     setItems((prev) =>
       prev.map((item) => ({
         ...item,
         tasks: item.tasks.map((task) =>
-          selectedTaskIds.has(task.tempId) ? { ...task, assigneeId: userId } : task
+          selectedTaskIds.has(task.tempId) ? { ...task, responsibleTeamId: teamId } : task
         ),
       }))
     );
     setBulkAssignOpen(false);
-    toast.success(`Assigned ${selectedTaskIds.size} task${selectedTaskIds.size !== 1 ? "s" : ""}`);
+    toast.success(`Set team for ${selectedTaskIds.size} task${selectedTaskIds.size !== 1 ? "s" : ""}`);
   };
 
   const handleBulkSetPIC = (userId: string) => {
@@ -1356,6 +1367,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                 quarter: task.quarter || "",
                 riskRating: task.riskRating,
                 assigneeId: task.assigneeId || "",
+                responsibleTeamId: task.responsibleTeamId || "",
                 picId: task.picId || "",
                 reviewerId: task.reviewerId || "",
                 startDate: task.startDate || "",
@@ -2476,7 +2488,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                               Risk
                             </th>
                             <th style={{ minWidth: "120px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                              Responsible
+                              DEPT / TEAM
                             </th>
                             <th style={{ minWidth: "120px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                               PIC
@@ -2657,19 +2669,19 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                     </td>
                                     <td style={{ padding: "4px" }}>
                                       <select
-                                        value={row.assigneeId}
+                                        value={row.responsibleTeamId}
                                         onChange={(e) =>
                                           setSpreadsheetData((prev) =>
-                                            prev.map((r) => (r.id === row.id ? { ...r, assigneeId: e.target.value } : r))
+                                            prev.map((r) => (r.id === row.id ? { ...r, responsibleTeamId: e.target.value } : r))
                                           )
                                         }
                                         className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
                                         style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
                                       >
                                         <option value="">None</option>
-                                        {users.map((user) => (
-                                          <option key={user.id} value={user.id}>
-                                            {user.name}
+                                        {teams.map((team) => (
+                                          <option key={team.id} value={team.id}>
+                                            {team.name}
                                           </option>
                                         ))}
                                       </select>
@@ -2839,19 +2851,19 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                 </td>
                                 <td style={{ padding: "4px" }}>
                                   <select
-                                    value={row.assigneeId}
+                                    value={row.responsibleTeamId}
                                     onChange={(e) =>
                                       setSpreadsheetData((prev) =>
-                                        prev.map((r) => (r.id === row.id ? { ...r, assigneeId: e.target.value } : r))
+                                        prev.map((r) => (r.id === row.id ? { ...r, responsibleTeamId: e.target.value } : r))
                                       )
                                     }
                                     className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
                                     style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
                                   >
                                     <option value="">None</option>
-                                    {users.map((user) => (
-                                      <option key={user.id} value={user.id}>
-                                        {user.name}
+                                    {teams.map((team) => (
+                                      <option key={team.id} value={team.id}>
+                                        {team.name}
                                       </option>
                                     ))}
                                   </select>
@@ -3087,15 +3099,15 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                       Department / Team Responsible
                                     </label>
                                     <select
-                                      value={newTaskForm.assigneeId}
-                                      onChange={(e) => setNewTaskForm({ ...newTaskForm, assigneeId: e.target.value })}
+                                      value={newTaskForm.responsibleTeamId}
+                                      onChange={(e) => setNewTaskForm({ ...newTaskForm, responsibleTeamId: e.target.value })}
                                       className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
                                       style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
                                     >
-                                      <option value="">Select responsible...</option>
-                                      {users.map((user) => (
-                                        <option key={user.id} value={user.id}>
-                                          {user.name}
+                                      <option value="">Select team...</option>
+                                      {teams.map((team) => (
+                                        <option key={team.id} value={team.id}>
+                                          {team.name}
                                         </option>
                                       ))}
                                     </select>
@@ -3308,6 +3320,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                       taskDescription: "",
                                       expectedOutcome: "",
                                       assigneeId: "",
+    responsibleTeamId: "",
                                       picId: "",
                                       reviewerId: "",
                                       frequency: defaultFrequency,
@@ -3344,6 +3357,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                   taskDescription: "",
                                   expectedOutcome: "",
                                   assigneeId: "",
+    responsibleTeamId: "",
                                   picId: "",
                                   reviewerId: "",
                                   frequency: defaultFrequency,
@@ -3511,15 +3525,15 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                               Department / Team Responsible
                             </label>
                             <select
-                              value={newItemForm.assigneeId}
-                              onChange={(e) => setNewItemForm({ ...newItemForm, assigneeId: e.target.value })}
+                              value={newItemForm.responsibleTeamId}
+                              onChange={(e) => setNewItemForm({ ...newItemForm, responsibleTeamId: e.target.value })}
                               className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
                               style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
                             >
-                              <option value="">Select responsible...</option>
-                              {users.map((user) => (
-                                <option key={user.id} value={user.id}>
-                                  {user.name}
+                              <option value="">Select team...</option>
+                              {teams.map((team) => (
+                                <option key={team.id} value={team.id}>
+                                  {team.name}
                                 </option>
                               ))}
                             </select>
@@ -3738,6 +3752,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                           taskDescription: "",
                           expectedOutcome: "",
                           assigneeId: "",
+    responsibleTeamId: "",
                           picId: "",
                           reviewerId: "",
                           frequency: defaultFrequency,
@@ -3933,7 +3948,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                           Task Name
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-                          Responsible
+                          Team
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
                           PIC
@@ -4001,11 +4016,11 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                               <span
                                 className="text-sm"
                                 style={{
-                                  color: task.assigneeId ? "var(--text-secondary)" : "var(--amber)",
+                                  color: task.responsibleTeamId ? "var(--text-secondary)" : "var(--amber)",
                                 }}
                               >
-                                {task.assigneeId
-                                  ? users.find((u) => u.id === task.assigneeId)?.name || "Unknown"
+                                {task.responsibleTeamId
+                                  ? teams.find((t) => t.id === task.responsibleTeamId)?.name || "Unknown"
                                   : "Not assigned"}
                               </span>
                             </td>
@@ -4076,7 +4091,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                     {selectedTaskIds.size} task{selectedTaskIds.size !== 1 ? "s" : ""} selected
                   </span>
                   <div className="flex gap-2">
-                    {/* Bulk Set Responsible */}
+                    {/* Bulk Set Responsible Team */}
                     <div className="relative">
                       <button
                         onClick={() => {
@@ -4088,7 +4103,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                         className="flex h-9 items-center gap-1.5 rounded-lg border px-4 text-sm font-medium transition-colors"
                         style={{ borderColor: "var(--border)", backgroundColor: "white", color: "var(--text-secondary)" }}
                       >
-                        Set Responsible...
+                        Set Team...
                         <ChevronDown size={14} />
                       </button>
                       {bulkAssignOpen && (
@@ -4097,14 +4112,14 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                           style={{ borderColor: "var(--border)" }}
                         >
                           <div className="max-h-60 overflow-y-auto p-2">
-                            {users.map((user) => (
+                            {teams.map((team) => (
                               <button
-                                key={user.id}
-                                onClick={() => handleBulkAssign(user.id)}
+                                key={team.id}
+                                onClick={() => handleBulkAssign(team.id)}
                                 className="w-full rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-subtle)]"
                                 style={{ color: "var(--text-primary)" }}
                               >
-                                {user.name}
+                                {team.name}
                               </button>
                             ))}
                           </div>
