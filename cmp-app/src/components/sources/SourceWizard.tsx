@@ -172,6 +172,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     id: string;
     reference: string;
     clauseTitle: string;
+    description: string;
     taskName: string;
     frequency: string;
     riskRating: string;
@@ -191,6 +192,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       id: `row-${Date.now()}-1`,
       reference: "",
       clauseTitle: "",
+      description: "",
       taskName: "",
       frequency: "MONTHLY",
       riskRating: "MEDIUM",
@@ -203,6 +205,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       id: `row-${Date.now()}-2`,
       reference: "",
       clauseTitle: "",
+      description: "",
       taskName: "",
       frequency: "MONTHLY",
       riskRating: "MEDIUM",
@@ -215,6 +218,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
   const [pastedData, setPastedData] = useState("");
   const [groupByClause, setGroupByClause] = useState(true);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set());
 
   // Helper function for positional grouping
   const getClauseGroups = (data: SpreadsheetRow[]): ClauseGroup[] => {
@@ -252,6 +256,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           id: "ungrouped",
           reference: "",
           clauseTitle: "Ungrouped Tasks",
+          description: "",
           taskName: "",
           frequency: "MONTHLY",
           riskRating: "MEDIUM",
@@ -277,7 +282,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           tempId: `temp-${group.clauseRow.id}`,
           reference: group.clauseRow.reference || "TBD",
           title: group.clauseRow.clauseTitle || "Untitled Clause",
-          description: "",
+          description: group.clauseRow.description || "",
           isInformational: false,
           expanded: false,
           tasks: group.taskRows
@@ -782,6 +787,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
 
       const reference = columns[0]?.trim() || "";
       const title = columns[1]?.trim() || "";
+      const description = columns[2]?.trim() || "";
       const taskName = columns[3]?.trim() || "";
       const frequency = columns[4]?.trim() || "MONTHLY";
       const riskRating = columns[5]?.trim() || "MEDIUM";
@@ -793,6 +799,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           id: `row-${Date.now()}-${idx}`,
           reference: isNewClause ? reference : "",
           clauseTitle: isNewClause ? title : "",
+          description: isNewClause ? description : "",
           taskName,
           frequency: FREQUENCIES.includes(frequency) ? frequency : "MONTHLY",
           riskRating: RISK_RATINGS.includes(riskRating) ? riskRating : "MEDIUM",
@@ -811,11 +818,12 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     toast.success(`Parsed ${clauseCount} clauses and ${parsedRows.length} tasks from pasted data`);
   };
 
-  const handleAddClauseWithTask = () => {
+  const handleAddClause = () => {
     const clauseRow: SpreadsheetRow = {
       id: `clause-${Date.now()}`,
       reference: "",
       clauseTitle: "",
+      description: "",
       taskName: "",
       frequency: defaultFrequency,
       riskRating: "MEDIUM",
@@ -828,6 +836,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       id: `task-${Date.now()}`,
       reference: "",
       clauseTitle: "",
+      description: "",
       taskName: "",
       frequency: defaultFrequency,
       riskRating: "MEDIUM",
@@ -837,6 +846,49 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       isClauseRow: false,
     };
     setSpreadsheetData([...spreadsheetData, clauseRow, taskRow]);
+  };
+
+  const handleAddTask = () => {
+    // Find the last clause in the data
+    let lastClauseIndex = -1;
+    for (let i = spreadsheetData.length - 1; i >= 0; i--) {
+      if (spreadsheetData[i].isClauseRow) {
+        lastClauseIndex = i;
+        break;
+      }
+    }
+
+    if (lastClauseIndex === -1) {
+      toast.error("Please add a clause first before adding tasks");
+      return;
+    }
+
+    // Find where to insert (after the last task of the last clause)
+    let insertIndex = lastClauseIndex + 1;
+    while (insertIndex < spreadsheetData.length && !spreadsheetData[insertIndex].isClauseRow) {
+      insertIndex++;
+    }
+
+    const newTask: SpreadsheetRow = {
+      id: `task-${Date.now()}`,
+      reference: "",
+      clauseTitle: "",
+      description: "",
+      taskName: "",
+      frequency: defaultFrequency,
+      riskRating: "MEDIUM",
+      assigneeId: "",
+      picId: "",
+      dueDate: "",
+      isClauseRow: false,
+    };
+
+    const newData = [
+      ...spreadsheetData.slice(0, insertIndex),
+      newTask,
+      ...spreadsheetData.slice(insertIndex),
+    ];
+    setSpreadsheetData(newData);
   };
 
   const handleAddTaskToClause = (clauseId: string) => {
@@ -853,6 +905,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       id: `task-${Date.now()}`,
       reference: "",
       clauseTitle: "",
+      description: "",
       taskName: "",
       frequency: defaultFrequency,
       riskRating: "MEDIUM",
@@ -1361,11 +1414,11 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div
-        className="relative w-full max-w-6xl rounded-[20px] bg-white shadow-2xl"
-        style={{ maxHeight: "90vh", overflow: "hidden" }}
+        className="relative flex w-full max-w-6xl flex-col rounded-[20px] bg-white shadow-2xl"
+        style={{ maxHeight: "90vh" }}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b p-6" style={{ borderColor: "var(--border)" }}>
+        {/* Fixed Header */}
+        <div className="flex flex-shrink-0 items-center justify-between border-b p-6" style={{ borderColor: "var(--border)" }}>
           <div>
             <h2 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
               {existingSource ? "Add Items & Tasks" : "Create Source"}
@@ -1385,7 +1438,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
 
         {/* Step Indicator */}
         {!existingSource && (
-          <div className="flex items-center justify-center gap-2 border-b px-6 py-4" style={{ borderColor: "var(--border)" }}>
+          <div className="flex flex-shrink-0 items-center justify-center gap-2 border-b px-6 py-4" style={{ borderColor: "var(--border)" }}>
             {[1, 2, 3, 4].map((s) => (
               <div key={s} className="flex items-center">
                 <div
@@ -1408,8 +1461,8 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           </div>
         )}
 
-        {/* Content */}
-        <div className="overflow-y-auto p-6" style={{ maxHeight: "calc(90vh - 200px)" }}>
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-6">
           {/* Step 1: Source Details */}
           {step === 1 && (
             <div className="space-y-6">
@@ -2303,17 +2356,28 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                           Items & Tasks
                         </span>
                         <span className="text-sm" style={{ color: "var(--text-muted)" }}>
-                          · {spreadsheetData.filter(r => r.isClauseRow).length} clauses, {spreadsheetData.filter(r => !r.isClauseRow && r.taskName.trim()).length} tasks
+                          · {spreadsheetData.filter(r => r.isClauseRow).length} clauses, {(() => {
+                            const taskCount = spreadsheetData.filter(r => !r.isClauseRow).length;
+                            return `${taskCount} task${taskCount !== 1 ? "s" : ""}`;
+                          })()}
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
                         <button
-                          onClick={handleAddClauseWithTask}
+                          onClick={handleAddClause}
                           className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
                           style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
                         >
                           <Plus size={14} />
-                          Add Clause with Task
+                          Add Clause
+                        </button>
+                        <button
+                          onClick={handleAddTask}
+                          className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
+                          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                        >
+                          <Plus size={14} />
+                          Add Task
                         </button>
                         <div className="flex items-center gap-2">
                           <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
@@ -2432,7 +2496,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                 <tr className="clause-header-row">
                                   <td colSpan={8} style={{ padding: "10px 12px" }}>
                                     <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-3">
+                                      <div className="flex flex-1 items-center gap-3">
                                         <input
                                           type="text"
                                           value={group.clauseRow.reference}
@@ -2443,8 +2507,8 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                               )
                                             )
                                           }
-                                          placeholder="Ref"
-                                          className="w-20 rounded border-0 bg-white/80 px-2 py-1 font-mono text-sm font-bold outline-none focus:ring-2 focus:ring-white"
+                                          placeholder="e.g., Art. 5"
+                                          className="w-24 rounded border-0 bg-white/80 px-2 py-1 font-mono text-sm font-bold outline-none focus:ring-2 focus:ring-white"
                                           style={{ color: "var(--purple)" }}
                                         />
                                         <span style={{ color: "var(--blue)", fontWeight: 500 }}>—</span>
@@ -2458,12 +2522,30 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                               )
                                             )
                                           }
-                                          placeholder="Clause title"
+                                          placeholder="e.g., Customer Due Diligence Requirements"
                                           className="flex-1 rounded border-0 bg-white/80 px-2 py-1 text-sm font-semibold outline-none focus:ring-2 focus:ring-white"
                                           style={{ color: "var(--blue)" }}
                                         />
+                                        <button
+                                          onClick={() => {
+                                            const newSet = new Set(expandedDescriptions);
+                                            if (newSet.has(group.clauseRow.id)) {
+                                              newSet.delete(group.clauseRow.id);
+                                            } else {
+                                              newSet.add(group.clauseRow.id);
+                                            }
+                                            setExpandedDescriptions(newSet);
+                                          }}
+                                          className="text-xs font-medium transition-opacity hover:opacity-70"
+                                          style={{ color: "var(--blue)" }}
+                                        >
+                                          📝 {group.clauseRow.description ? "Description ✓" : "Add description"}
+                                        </button>
                                         <span className="rounded-full px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: "white", color: "var(--blue)" }}>
-                                          {group.taskRows.filter(t => t.taskName.trim()).length} task{group.taskRows.filter(t => t.taskName.trim()).length !== 1 ? "s" : ""}
+                                          {(() => {
+                                            const taskRowCount = group.taskRows.length;
+                                            return taskRowCount === 1 ? "1 task row" : `${taskRowCount} task rows`;
+                                          })()}
                                         </span>
                                       </div>
                                       {group.clauseRow.id !== "ungrouped" && (
@@ -2473,7 +2555,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                               prev.filter((r) => r.id !== group.clauseRow.id && !group.taskRows.some(t => t.id === r.id))
                                             )
                                           }
-                                          className="rounded p-1 transition-colors hover:bg-white/30"
+                                          className="ml-2 rounded p-1 transition-colors hover:bg-white/30"
                                           style={{ color: "var(--red)" }}
                                         >
                                           <Trash2 size={14} />
@@ -2482,6 +2564,27 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                     </div>
                                   </td>
                                 </tr>
+
+                                {/* Description Row */}
+                                {expandedDescriptions.has(group.clauseRow.id) && (
+                                  <tr style={{ backgroundColor: "var(--bg-subtle)" }}>
+                                    <td colSpan={8} style={{ padding: "12px" }}>
+                                      <textarea
+                                        value={group.clauseRow.description}
+                                        onChange={(e) =>
+                                          setSpreadsheetData((prev) =>
+                                            prev.map((r) =>
+                                              r.id === group.clauseRow.id ? { ...r, description: e.target.value } : r
+                                            )
+                                          )
+                                        }
+                                        placeholder="Paste or type the full regulation clause text here..."
+                                        className="w-full rounded border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                        style={{ borderColor: "var(--border)", color: "var(--text-primary)", minHeight: "80px", resize: "vertical" }}
+                                      />
+                                    </td>
+                                  </tr>
+                                )}
 
                                 {/* Task Rows */}
                                 {group.taskRows.map((row) => (
@@ -2511,7 +2614,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                             prev.map((r) => (r.id === row.id ? { ...r, taskName: e.target.value } : r))
                                           )
                                         }
-                                        placeholder="Task name..."
+                                        placeholder="e.g., Monthly CDD completion review"
                                         className="spreadsheet-cell"
                                         style={{ color: "var(--text-primary)" }}
                                       />
@@ -2664,7 +2767,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                         prev.map((r) => (r.id === row.id ? { ...r, reference: e.target.value } : r))
                                       )
                                     }
-                                    placeholder={row.isClauseRow ? "Ref" : ""}
+                                    placeholder={row.isClauseRow ? "e.g., Art. 5" : ""}
                                     className="spreadsheet-cell font-mono font-bold"
                                     style={{ color: "var(--purple)" }}
                                   />
@@ -2679,7 +2782,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                         prev.map((r) => (r.id === row.id ? { ...r, clauseTitle: e.target.value } : r))
                                       )
                                     }
-                                    placeholder={row.isClauseRow ? "Clause title" : ""}
+                                    placeholder={row.isClauseRow ? "e.g., Customer Due Diligence Requirements" : ""}
                                     className="spreadsheet-cell"
                                     style={{ fontWeight: 500, color: "var(--text-primary)" }}
                                   />
@@ -2693,7 +2796,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                         prev.map((r) => (r.id === row.id ? { ...r, taskName: e.target.value } : r))
                                       )
                                     }
-                                    placeholder="Task name..."
+                                    placeholder="e.g., Monthly CDD completion review"
                                     className="spreadsheet-cell"
                                     style={{ color: "var(--text-primary)" }}
                                   />
@@ -2803,13 +2906,15 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                       </table>
                     </div>
 
-                    {/* Info Message */}
-                    <div className="flex items-start gap-2 rounded-lg border p-3" style={{ borderColor: "var(--blue-mid)", backgroundColor: "var(--blue-light)" }}>
-                      <AlertCircle size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--blue)" }} />
-                      <p className="text-xs" style={{ color: "var(--text-primary)" }}>
-                        <strong>Auto-syncing:</strong> Data entered here automatically feeds into Steps 3 &amp; 4. No need to click &quot;Apply&quot;.
-                      </p>
-                    </div>
+                    {/* Info Message - only for spreadsheet view */}
+                    {inputMethod === "spreadsheet" && (
+                      <div className="flex items-start gap-2 rounded-lg border p-3" style={{ borderColor: "var(--blue-mid)", backgroundColor: "var(--blue-light)" }}>
+                        <AlertCircle size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--blue)" }} />
+                        <p className="text-xs" style={{ color: "var(--text-primary)" }}>
+                          <strong>Auto-syncing:</strong> Data entered here automatically feeds into Steps 3 &amp; 4. No need to click &quot;Apply&quot;.
+                        </p>
+                      </div>
+                    )}
                   </>
                 </div>
               )}
@@ -3664,22 +3769,13 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                 </div>
               )}
 
-              {/* Shared Items Display - shows items regardless of input method */}
-              {items.length > 0 && (
+              {/* Shared Items Display - only for one-by-one mode */}
+              {items.length > 0 && inputMethod === "one-by-one" && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
                       Added Items ({items.length})
                     </h4>
-                    {items.length > 0 && inputMethod !== "one-by-one" && (
-                      <button
-                        onClick={() => setInputMethod("one-by-one")}
-                        className="text-xs font-medium transition-colors hover:underline"
-                        style={{ color: "var(--blue)" }}
-                      >
-                        Switch to one-by-one editor
-                      </button>
-                    )}
                   </div>
                   
                   {items.map((item) => (
@@ -4266,9 +4362,9 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           )}
         </div>
 
-        {/* Footer */}
+        {/* Fixed Footer */}
         <div
-          className="flex items-center justify-between border-t p-6"
+          className="flex flex-shrink-0 items-center justify-between border-t p-6"
           style={{ borderColor: "var(--border)" }}
         >
           <button
