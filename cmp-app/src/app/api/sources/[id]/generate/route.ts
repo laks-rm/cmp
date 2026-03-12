@@ -55,12 +55,12 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
       warnings.push(`${itemsWithoutTasks.length} items have no tasks`);
     }
 
-    // Check for tasks with no assignee
-    const tasksWithoutAssignee = validatedData.items.flatMap((item) =>
-      item.tasks.filter((task) => !task.assigneeId)
+    // Check for tasks with no responsible team
+    const tasksWithoutResponsibleTeam = validatedData.items.flatMap((item) =>
+      item.tasks.filter((task) => !task.responsibleTeamId)
     );
-    if (tasksWithoutAssignee.length > 0) {
-      warnings.push(`${tasksWithoutAssignee.length} tasks have no assignee`);
+    if (tasksWithoutResponsibleTeam.length > 0) {
+      warnings.push(`${tasksWithoutResponsibleTeam.length} tasks have no responsible team`);
     }
 
     if (errors.length > 0) {
@@ -103,10 +103,10 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
               frequency: taskData.frequency,
               quarter: taskData.quarter,
               riskRating: taskData.riskRating,
-              assigneeId: taskData.assigneeId,
-              responsibleTeamId: taskData.responsibleTeamId,
-              picId: taskData.picId,
-              reviewerId: taskData.reviewerId,
+              assigneeId: taskData.assigneeId || null,
+              responsibleTeamId: taskData.responsibleTeamId || null,
+              picId: taskData.picId || null,
+              reviewerId: taskData.reviewerId || null,
               startDate: taskData.startDate ? new Date(taskData.startDate) : null,
               dueDate: taskData.dueDate ? new Date(taskData.dueDate) : null,
               testingPeriodStart: taskData.testingPeriodStart ? new Date(taskData.testingPeriodStart) : null,

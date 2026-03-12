@@ -104,7 +104,28 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    const updates: Record<string, unknown> = { ...data };
+    const updates: Record<string, unknown> = {};
+    
+    // Copy all fields from validated data, converting empty strings to null for UUID fields
+    if (data.name !== undefined) updates.name = data.name;
+    if (data.description !== undefined) updates.description = data.description;
+    if (data.expectedOutcome !== undefined) updates.expectedOutcome = data.expectedOutcome;
+    if (data.riskRating !== undefined) updates.riskRating = data.riskRating;
+    if (data.frequency !== undefined) updates.frequency = data.frequency;
+    if (data.quarter !== undefined) updates.quarter = data.quarter;
+    if (data.evidenceRequired !== undefined) updates.evidenceRequired = data.evidenceRequired;
+    if (data.narrativeRequired !== undefined) updates.narrativeRequired = data.narrativeRequired;
+    if (data.reviewRequired !== undefined) updates.reviewRequired = data.reviewRequired;
+    if (data.narrative !== undefined) updates.narrative = data.narrative;
+    if (data.clickupUrl !== undefined) updates.clickupUrl = data.clickupUrl;
+    if (data.gdriveUrl !== undefined) updates.gdriveUrl = data.gdriveUrl;
+    if (data.sourceId !== undefined) updates.sourceId = data.sourceId;
+    if (data.sourceItemId !== undefined) updates.sourceItemId = data.sourceItemId || null;
+    if (data.entityId !== undefined) updates.entityId = data.entityId;
+    if (data.assigneeId !== undefined) updates.assigneeId = data.assigneeId || null;
+    if (data.responsibleTeamId !== undefined) updates.responsibleTeamId = data.responsibleTeamId || null;
+    if (data.picId !== undefined) updates.picId = data.picId || null;
+    if (data.reviewerId !== undefined) updates.reviewerId = data.reviewerId || null;
 
     if (data.status && data.status !== existingTask.status) {
       const allowedStatuses = existingTask.source.team.statusFlow as string[];

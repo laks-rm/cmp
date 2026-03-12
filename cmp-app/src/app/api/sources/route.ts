@@ -6,6 +6,7 @@ import { requirePermission, getUserEntities } from "@/lib/permissions";
 import { createSourceSchema } from "@/lib/validations/sources";
 import { logAuditEvent } from "@/lib/audit";
 import { ApiError } from "@/lib/errors";
+import { z } from "zod";
 
 export async function GET(req: NextRequest) {
   try {
@@ -157,6 +158,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(source);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error("Validation error:", error.issues);
+      return NextResponse.json({ error: "Invalid input: " + error.issues[0].message }, { status: 400 });
+    }
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+      return NextResponse.json({ error: "A source with this code already exists for this team" }, { status: 409 });
+    }
     if (error instanceof ApiError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }

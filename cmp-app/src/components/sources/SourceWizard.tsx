@@ -37,7 +37,7 @@ type TaskDefinition = {
   name: string;
   description: string;
   expectedOutcome: string;
-  assigneeId: string;
+  responsibleTeamId: string;
   picId: string;
   reviewerId: string;
   frequency: string;
@@ -179,6 +179,8 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     responsibleTeamId: string;
     picId: string;
     dueDate: string;
+    evidenceRequired: boolean;
+    reviewRequired: boolean;
     isClauseRow: boolean;
   };
   
@@ -199,6 +201,8 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       responsibleTeamId: "",
       picId: "",
       dueDate: "",
+      evidenceRequired: selectedTeam?.evidenceRequired || false,
+      reviewRequired: selectedTeam?.approvalRequired || true,
       isClauseRow: true,
     },
     {
@@ -212,6 +216,8 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       responsibleTeamId: "",
       picId: "",
       dueDate: "",
+      evidenceRequired: selectedTeam?.evidenceRequired || false,
+      reviewRequired: selectedTeam?.approvalRequired || true,
       isClauseRow: false,
     },
   ]);
@@ -263,6 +269,8 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           responsibleTeamId: "",
           picId: "",
           dueDate: "",
+          evidenceRequired: false,
+          reviewRequired: true,
           isClauseRow: true,
         },
         taskRows: ungroupedTasks,
@@ -300,8 +308,8 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
               riskRating: task.riskRating,
               startDate: "",
               dueDate: task.dueDate,
-              evidenceRequired: selectedTeam?.evidenceRequired || false,
-              reviewRequired: selectedTeam?.approvalRequired || true,
+              evidenceRequired: task.evidenceRequired,
+              reviewRequired: task.reviewRequired,
               clickupUrl: "",
               gdriveUrl: "",
             })),
@@ -323,7 +331,6 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     taskName: "",
     taskDescription: "",
     expectedOutcome: "",
-    assigneeId: "",
     responsibleTeamId: "",
     picId: "",
     reviewerId: "",
@@ -341,7 +348,6 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     taskName: "",
     taskDescription: "",
     expectedOutcome: "",
-    assigneeId: "",
     responsibleTeamId: "",
     picId: "",
     reviewerId: "",
@@ -477,7 +483,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
               reviewRequired: boolean;
               clickupUrl: string | null;
               gdriveUrl: string | null;
-              assigneeId: string | null;
+              responsibleTeamId: string | null;
               picId: string | null;
               reviewerId: string | null;
             }>;
@@ -493,7 +499,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
               name: task.name,
               description: task.description || "",
               expectedOutcome: task.expectedOutcome || "",
-              assigneeId: task.assigneeId || "",
+              responsibleTeamId: task.responsibleTeamId || "",
               picId: task.picId || "",
               reviewerId: task.reviewerId || "",
               frequency: task.frequency,
@@ -755,8 +761,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
             name: task.name,
             description: "",
             expectedOutcome: "",
-            assigneeId: "",
-    responsibleTeamId: "",
+            responsibleTeamId: "",
             picId: "",
             reviewerId: "",
             frequency: task.frequency,
@@ -794,6 +799,22 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       const taskName = columns[3]?.trim() || "";
       const frequency = columns[4]?.trim() || "MONTHLY";
       const riskRating = columns[5]?.trim() || "MEDIUM";
+      
+      // Parse Evidence Required (column 6) - Y/Yes/TRUE/1 = true, else use team default
+      const evidenceCol = columns[6]?.trim().toUpperCase() || "";
+      const evidenceRequired = ["Y", "YES", "TRUE", "1"].includes(evidenceCol) 
+        ? true 
+        : evidenceCol === "" 
+          ? (selectedTeam?.evidenceRequired || false)
+          : false;
+      
+      // Parse Review Required (column 7) - Y/Yes/TRUE/1 = true, else use team default
+      const reviewCol = columns[7]?.trim().toUpperCase() || "";
+      const reviewRequired = ["Y", "YES", "TRUE", "1"].includes(reviewCol) 
+        ? true 
+        : reviewCol === "" 
+          ? (selectedTeam?.approvalRequired || true)
+          : false;
 
       const isNewClause = reference !== "";
 
@@ -806,10 +827,11 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           taskName,
           frequency: FREQUENCIES.includes(frequency) ? frequency : "MONTHLY",
           riskRating: RISK_RATINGS.includes(riskRating) ? riskRating : "MEDIUM",
-          assigneeId: "",
-    responsibleTeamId: "",
+          responsibleTeamId: "",
           picId: "",
           dueDate: "",
+          evidenceRequired,
+          reviewRequired,
           isClauseRow: isNewClause,
         });
       }
@@ -831,10 +853,11 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       taskName: "",
       frequency: defaultFrequency,
       riskRating: "MEDIUM",
-      assigneeId: "",
-    responsibleTeamId: "",
+      responsibleTeamId: "",
       picId: "",
       dueDate: "",
+      evidenceRequired: selectedTeam?.evidenceRequired || false,
+      reviewRequired: selectedTeam?.approvalRequired || true,
       isClauseRow: true,
     };
     const taskRow: SpreadsheetRow = {
@@ -845,10 +868,11 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       taskName: "",
       frequency: defaultFrequency,
       riskRating: "MEDIUM",
-      assigneeId: "",
-    responsibleTeamId: "",
+      responsibleTeamId: "",
       picId: "",
       dueDate: "",
+      evidenceRequired: selectedTeam?.evidenceRequired || false,
+      reviewRequired: selectedTeam?.approvalRequired || true,
       isClauseRow: false,
     };
     setSpreadsheetData([...spreadsheetData, clauseRow, taskRow]);
@@ -883,10 +907,11 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       taskName: "",
       frequency: defaultFrequency,
       riskRating: "MEDIUM",
-      assigneeId: "",
-    responsibleTeamId: "",
+      responsibleTeamId: "",
       picId: "",
       dueDate: "",
+      evidenceRequired: selectedTeam?.evidenceRequired || false,
+      reviewRequired: selectedTeam?.approvalRequired || true,
       isClauseRow: false,
     };
 
@@ -916,10 +941,11 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       taskName: "",
       frequency: defaultFrequency,
       riskRating: "MEDIUM",
-      assigneeId: "",
-    responsibleTeamId: "",
+      responsibleTeamId: "",
       picId: "",
       dueDate: "",
+      evidenceRequired: selectedTeam?.evidenceRequired || false,
+      reviewRequired: selectedTeam?.approvalRequired || true,
       isClauseRow: false,
     };
 
@@ -1025,7 +1051,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
               name: newItemForm.taskName,
               description: newItemForm.taskDescription,
               expectedOutcome: newItemForm.expectedOutcome,
-              assigneeId: newItemForm.assigneeId,
+              responsibleTeamId: newItemForm.responsibleTeamId,
               picId: newItemForm.picId,
               reviewerId: newItemForm.reviewerId,
               frequency: newItemForm.frequency,
@@ -1054,8 +1080,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       taskName: "",
       taskDescription: "",
       expectedOutcome: "",
-      assigneeId: "",
-    responsibleTeamId: "",
+      responsibleTeamId: "",
       picId: "",
       reviewerId: "",
       frequency: defaultFrequency,
@@ -1110,7 +1135,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
             name: newTaskForm.taskName,
             description: newTaskForm.taskDescription || undefined,
             expectedOutcome: newTaskForm.expectedOutcome || undefined,
-            assigneeId: newTaskForm.assigneeId || undefined,
+            responsibleTeamId: newTaskForm.responsibleTeamId || undefined,
             picId: newTaskForm.picId || undefined,
             reviewerId: newTaskForm.reviewerId || undefined,
             frequency: newTaskForm.frequency,
@@ -1155,8 +1180,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           taskName: "",
           taskDescription: "",
           expectedOutcome: "",
-          assigneeId: "",
-    responsibleTeamId: "",
+          responsibleTeamId: "",
           picId: "",
           reviewerId: "",
           frequency: defaultFrequency,
@@ -1186,7 +1210,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       name: newTaskForm.taskName,
       description: newTaskForm.taskDescription,
       expectedOutcome: newTaskForm.expectedOutcome,
-      assigneeId: newTaskForm.assigneeId,
+      responsibleTeamId: newTaskForm.responsibleTeamId,
       picId: newTaskForm.picId,
       reviewerId: newTaskForm.reviewerId,
       frequency: newTaskForm.frequency,
@@ -1213,8 +1237,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       taskName: "",
       taskDescription: "",
       expectedOutcome: "",
-      assigneeId: "",
-    responsibleTeamId: "",
+      responsibleTeamId: "",
       picId: "",
       reviewerId: "",
       frequency: defaultFrequency,
@@ -1366,7 +1389,6 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                 frequency: task.frequency,
                 quarter: task.quarter || "",
                 riskRating: task.riskRating,
-                assigneeId: task.assigneeId || "",
                 responsibleTeamId: task.responsibleTeamId || "",
                 picId: task.picId || "",
                 reviewerId: task.reviewerId || "",
@@ -2496,6 +2518,14 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                             <th style={{ minWidth: "110px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                               Due Date
                             </th>
+                            <th style={{ width: "60px", padding: "10px 8px", textAlign: "center", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                              EVID
+                            </th>
+                            {selectedTeam?.approvalRequired && (
+                              <th style={{ width: "60px", padding: "10px 8px", textAlign: "center", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                REV
+                              </th>
+                            )}
                             <th style={{ width: "40px", padding: "10px 8px" }}></th>
                           </tr>
                         </thead>
@@ -2506,7 +2536,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                               <React.Fragment key={group.clauseRow.id}>
                                 {/* Clause Header Row */}
                                 <tr className="clause-header-row">
-                                  <td colSpan={8} style={{ padding: "10px 12px" }}>
+                                  <td colSpan={selectedTeam?.approvalRequired ? 10 : 9} style={{ padding: "10px 12px" }}>
                                     <div className="flex items-center justify-between">
                                       <div className="flex flex-1 items-center gap-3">
                                         <input
@@ -2718,6 +2748,38 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                         style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
                                       />
                                     </td>
+                                    {/* Evidence Required Toggle */}
+                                    <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                                      <button
+                                        onClick={() =>
+                                          setSpreadsheetData((prev) =>
+                                            prev.map((r) => (r.id === row.id ? { ...r, evidenceRequired: !r.evidenceRequired } : r))
+                                          )
+                                        }
+                                        className="rounded-full p-1 transition-colors hover:bg-[var(--green-light)]"
+                                        style={{ color: row.evidenceRequired ? "var(--green)" : "var(--text-muted)" }}
+                                        title={row.evidenceRequired ? "Evidence Required" : "No Evidence Required"}
+                                      >
+                                        {row.evidenceRequired ? <CheckCircle size={16} /> : <span style={{ fontSize: "16px" }}>—</span>}
+                                      </button>
+                                    </td>
+                                    {/* Review Required Toggle */}
+                                    {selectedTeam?.approvalRequired && (
+                                      <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                                        <button
+                                          onClick={() =>
+                                            setSpreadsheetData((prev) =>
+                                              prev.map((r) => (r.id === row.id ? { ...r, reviewRequired: !r.reviewRequired } : r))
+                                            )
+                                          }
+                                          className="rounded-full p-1 transition-colors hover:bg-[var(--blue-light)]"
+                                          style={{ color: row.reviewRequired ? "var(--blue)" : "var(--text-muted)" }}
+                                          title={row.reviewRequired ? "Review Required" : "No Review Required"}
+                                        >
+                                          {row.reviewRequired ? <CheckCircle size={16} /> : <span style={{ fontSize: "16px" }}>—</span>}
+                                        </button>
+                                      </td>
+                                    )}
                                     <td style={{ padding: "4px 8px", textAlign: "center" }}>
                                       <button
                                         onClick={() =>
@@ -2735,7 +2797,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                 {/* Add Task Link */}
                                 {group.clauseRow.id !== "ungrouped" && (
                                   <tr style={{ backgroundColor: "var(--bg-subtle)" }}>
-                                    <td colSpan={8} style={{ padding: "6px 12px" }}>
+                                    <td colSpan={selectedTeam?.approvalRequired ? 10 : 9} style={{ padding: "6px 12px" }}>
                                       <button
                                         onClick={() => handleAddTaskToClause(group.clauseRow.id)}
                                         className="flex items-center gap-1 text-xs font-medium transition-colors hover:underline"
@@ -2900,6 +2962,38 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                     style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
                                   />
                                 </td>
+                                {/* Evidence Required Toggle */}
+                                <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                                  <button
+                                    onClick={() =>
+                                      setSpreadsheetData((prev) =>
+                                        prev.map((r) => (r.id === row.id ? { ...r, evidenceRequired: !r.evidenceRequired } : r))
+                                      )
+                                    }
+                                    className="rounded-full p-1 transition-colors hover:bg-[var(--green-light)]"
+                                    style={{ color: row.evidenceRequired ? "var(--green)" : "var(--text-muted)" }}
+                                    title={row.evidenceRequired ? "Evidence Required" : "No Evidence Required"}
+                                  >
+                                    {row.evidenceRequired ? <CheckCircle size={16} /> : <span style={{ fontSize: "16px" }}>—</span>}
+                                  </button>
+                                </td>
+                                {/* Review Required Toggle */}
+                                {selectedTeam?.approvalRequired && (
+                                  <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                                    <button
+                                      onClick={() =>
+                                        setSpreadsheetData((prev) =>
+                                          prev.map((r) => (r.id === row.id ? { ...r, reviewRequired: !r.reviewRequired } : r))
+                                        )
+                                      }
+                                      className="rounded-full p-1 transition-colors hover:bg-[var(--blue-light)]"
+                                      style={{ color: row.reviewRequired ? "var(--blue)" : "var(--text-muted)" }}
+                                      title={row.reviewRequired ? "Review Required" : "No Review Required"}
+                                    >
+                                      {row.reviewRequired ? <CheckCircle size={16} /> : <span style={{ fontSize: "16px" }}>—</span>}
+                                    </button>
+                                  </td>
+                                )}
                                 <td style={{ padding: "4px 8px", textAlign: "center" }}>
                                   <button
                                     onClick={() =>
@@ -3015,9 +3109,9 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                 </p>
                                 <div className="mt-1 flex items-center gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
                                   <span>
-                                    {task.assigneeId
-                                      ? users.find((u) => u.id === task.assigneeId)?.name || "Unknown"
-                                      : "Not assigned"}
+                                    {task.responsibleTeamId
+                                      ? teams.find((t) => t.id === task.responsibleTeamId)?.name || "Unknown"
+                                      : "No team assigned"}
                                   </span>
                                   <span>•</span>
                                   <span>{task.frequency.replace(/_/g, " ")}</span>
@@ -3319,8 +3413,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                       taskName: "",
                                       taskDescription: "",
                                       expectedOutcome: "",
-                                      assigneeId: "",
-    responsibleTeamId: "",
+                                      responsibleTeamId: "",
                                       picId: "",
                                       reviewerId: "",
                                       frequency: defaultFrequency,
@@ -3356,8 +3449,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                   taskName: "",
                                   taskDescription: "",
                                   expectedOutcome: "",
-                                  assigneeId: "",
-    responsibleTeamId: "",
+                                  responsibleTeamId: "",
                                   picId: "",
                                   reviewerId: "",
                                   frequency: defaultFrequency,
@@ -3751,8 +3843,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                           taskName: "",
                           taskDescription: "",
                           expectedOutcome: "",
-                          assigneeId: "",
-    responsibleTeamId: "",
+                          responsibleTeamId: "",
                           picId: "",
                           reviewerId: "",
                           frequency: defaultFrequency,
@@ -3878,9 +3969,9 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                 </p>
                                 <div className="mt-1 flex items-center gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
                                   <span>
-                                    {task.assigneeId
-                                      ? users.find((u) => u.id === task.assigneeId)?.name || "Unknown"
-                                      : "Not assigned"}
+                                    {task.responsibleTeamId
+                                      ? teams.find((t) => t.id === task.responsibleTeamId)?.name || "Unknown"
+                                      : "No team assigned"}
                                   </span>
                                   <span>•</span>
                                   <span>{task.frequency.replace(/_/g, " ")}</span>
@@ -4329,7 +4420,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                 )}
 
                 {/* Warnings */}
-                {items.flatMap((item) => item.tasks).some((t) => !t.assigneeId || !t.dueDate) && (
+                {items.flatMap((item) => item.tasks).some((t) => !t.responsibleTeamId || !t.dueDate) && (
                   <div
                     className="flex items-start gap-3 rounded-lg border p-4"
                     style={{ borderColor: "var(--amber)", backgroundColor: "var(--amber-light)" }}
@@ -4340,8 +4431,8 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                         Warnings — Can Proceed
                       </p>
                       <ul className="mt-2 list-inside list-disc space-y-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-                        {items.flatMap((item) => item.tasks).filter((t) => !t.assigneeId).length > 0 && (
-                          <li>{items.flatMap((item) => item.tasks).filter((t) => !t.assigneeId).length} task(s) without assignee</li>
+                        {items.flatMap((item) => item.tasks).filter((t) => !t.responsibleTeamId).length > 0 && (
+                          <li>{items.flatMap((item) => item.tasks).filter((t) => !t.responsibleTeamId).length} task(s) without responsible team</li>
                         )}
                         {items.flatMap((item) => item.tasks).filter((t) => !t.dueDate).length > 0 && (
                           <li>{items.flatMap((item) => item.tasks).filter((t) => !t.dueDate).length} task(s) without due date</li>
@@ -4356,7 +4447,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
 
                 {/* Success State */}
                 {!items.some((item) => !item.reference || (!item.isInformational && item.tasks.some((t) => !t.name))) &&
-                  items.flatMap((item) => item.tasks).every((t) => t.assigneeId && t.dueDate) && (
+                  items.flatMap((item) => item.tasks).every((t) => t.responsibleTeamId && t.dueDate) && (
                     <div
                       className="flex items-start gap-3 rounded-lg border p-4"
                       style={{ borderColor: "var(--green)", backgroundColor: "var(--green-light)" }}
