@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Cookies - CMP</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 100px auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .box {
+            background: #f8f9fa;
+            border: 2px solid #dee2e6;
+            border-radius: 12px;
+            padding: 30px;
+        }
+        button {
+            background: #FF444F;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #e03d47;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 8px;
+            display: none;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>🍪 Clear All Cookies</h1>
+        <p>This will clear all cookies for localhost:3000 including old NextAuth session cookies that might be causing login issues.</p>
+        
+        <p><strong>Current cookies:</strong></p>
+        <div id="cookie-list" style="font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; margin: 10px 0;"></div>
+        
+        <button onclick="clearAllCookies()">Clear All Cookies</button>
+        
+        <div id="status" class="status"></div>
+    </div>
+
+    <script>
+        function displayCookies() {
+            const list = document.getElementById('cookie-list');
+            const cookies = document.cookie.split(';');
+            if (cookies.length === 1 && cookies[0] === '') {
+                list.innerHTML = '<em style="color: #6c757d;">No cookies found</em>';
+            } else {
+                list.innerHTML = cookies.map(c => c.trim()).join('<br>');
+            }
+        }
+
+        function clearAllCookies() {
+            const cookies = document.cookie.split(";");
+            
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i];
+                const eqPos = cookie.indexOf("=");
+                const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+                
+                // Clear cookie for all possible paths and domains
+                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=localhost";
+                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.localhost";
+            }
+            
+            const status = document.getElementById('status');
+            status.className = 'status success';
+            status.style.display = 'block';
+            status.innerHTML = '✓ All cookies cleared! You can now <a href="/login">go to login page</a>';
+            
+            displayCookies();
+        }
+
+        // Display cookies on page load
+        displayCookies();
+    </script>
+</body>
+</html>
