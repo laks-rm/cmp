@@ -40,6 +40,7 @@ type Task = {
   source: { id: string; name: string; code: string };
   sourceItem: { reference: string } | null;
   assignee: { id: string; name: string; initials: string; avatarColor: string | null } | null;
+  responsibleTeam: { id: string; name: string } | null;
 };
 
 type FilterChip = {
@@ -139,15 +140,13 @@ const TaskRow = memo(
           </span>
         </td>
         <td className="px-4 py-3">
-          {task.assignee ? (
-            <div className="flex items-center gap-2">
-              <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold text-white ${task.assignee.avatarColor || "bg-slate-400"}`}>
-                {task.assignee.initials}
-              </div>
-              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                {task.assignee.name.split(" ")[0]}
-              </span>
-            </div>
+          {task.responsibleTeam ? (
+            <span 
+              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium" 
+              style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
+            >
+              {task.responsibleTeam.name}
+            </span>
           ) : (
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
               Not assigned
@@ -496,7 +495,7 @@ export function TaskTrackerClient() {
               className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white"
               style={{ borderColor: "var(--blue)", color: "var(--blue)", backgroundColor: "transparent" }}
             >
-              Set Responsible...
+              Set Team...
             </button>
             <button
               className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white"
@@ -544,7 +543,7 @@ export function TaskTrackerClient() {
                   Risk
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Responsible
+                  Team
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
                   Freq / Quarter

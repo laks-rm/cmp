@@ -86,9 +86,11 @@ type Task = {
     name: string;
   };
   assignee: User | null;
+  responsibleTeam: { id: string; name: string } | null;
   pic: User | null;
   reviewer: User | null;
   assigneeId: string | null;
+  responsibleTeamId: string | null;
   reviewerId: string | null;
 };
 
@@ -428,20 +430,15 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                        Department / Team Responsible
+                        Responsible Team
                       </label>
-                      {task.assignee ? (
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
-                            style={{ background: task.assignee.avatarColor || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
-                          >
-                            {task.assignee.initials}
-                          </div>
-                          <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                            {task.assignee.name}
-                          </span>
-                        </div>
+                      {task.responsibleTeam ? (
+                        <span 
+                          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium" 
+                          style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
+                        >
+                          {task.responsibleTeam.name}
+                        </span>
                       ) : (
                         <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not assigned</span>
                       )}
