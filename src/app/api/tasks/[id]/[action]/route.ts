@@ -52,7 +52,11 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
             submittedAt: null,
           },
           include: {
-            source: true,
+            source: {
+              include: {
+                team: true,
+              },
+            },
             entity: true,
             assignee: true,
             pic: true,
@@ -91,7 +95,11 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
             completedAt: new Date(),
           },
           include: {
-            source: true,
+            source: {
+              include: {
+                team: true,
+              },
+            },
             entity: true,
             assignee: true,
             pic: true,
@@ -137,7 +145,11 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
             submittedAt: null,
           },
           include: {
-            source: true,
+            source: {
+              include: {
+                team: true,
+              },
+            },
             entity: true,
             assignee: true,
             pic: true,
@@ -192,7 +204,11 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
             completedAt: new Date(),
           },
           include: {
-            source: true,
+            source: {
+              include: {
+                team: true,
+              },
+            },
             entity: true,
             assignee: true,
             pic: true,
@@ -233,7 +249,11 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
             submittedAt: new Date(),
           },
           include: {
-            source: true,
+            source: {
+              include: {
+                team: true,
+              },
+            },
             entity: true,
             assignee: true,
             pic: true,

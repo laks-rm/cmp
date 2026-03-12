@@ -12,7 +12,12 @@ type Source = {
   code: string;
   name: string;
   sourceType: string;
-  issuingAuthority: string | null;
+  issuingAuthority: {
+    id: string;
+    name: string;
+    abbreviation: string | null;
+    country: string | null;
+  } | null;
   status: string;
   effectiveDate?: string | null;
   reviewDate?: string | null;
@@ -175,7 +180,9 @@ export function SourcesClient() {
                     </p>
                     {source.issuingAuthority && (
                       <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-                        {source.issuingAuthority}
+                        {source.issuingAuthority.abbreviation 
+                          ? `${source.issuingAuthority.abbreviation} — ${source.issuingAuthority.name}`
+                          : source.issuingAuthority.name}
                       </p>
                     )}
                   </div>

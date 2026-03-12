@@ -70,6 +70,7 @@ export async function GET(req: NextRequest) {
         include: {
           source: {
             include: {
+              team: true,
               items: {
                 take: 1,
               },
@@ -150,7 +151,11 @@ export async function POST(req: NextRequest) {
         testingPeriodEnd: data.testingPeriodEnd ? new Date(data.testingPeriodEnd) : null,
       },
       include: {
-        source: true,
+        source: {
+          include: {
+            team: true,
+          },
+        },
         entity: true,
       },
     });

@@ -171,7 +171,11 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
       where: { id: taskId },
       data: updates,
       include: {
-        source: true,
+        source: {
+          include: {
+            team: true,
+          },
+        },
         entity: true,
         assignee: true,
         pic: true,

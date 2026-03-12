@@ -66,6 +66,17 @@ enum FindingStatus {
   OVERDUE
 }
 
+model IssuingAuthority {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  abbreviation String?
+  country      String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  sources      Source[]
+}
+
 model Entity {
   id           String             @id @default(uuid())
   code         String             @unique
@@ -184,25 +195,27 @@ model TeamMembership {
 }
 
 model Source {
-  id               String       @id @default(uuid())
-  code             String
-  name             String
-  sourceType       SourceType
-  issuingAuthority String?
-  effectiveDate    DateTime?
-  reviewDate       DateTime?
-  status           SourceStatus @default(DRAFT)
-  teamId           String
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  team             Team         @relation(fields: [teamId], references: [id], onDelete: Restrict)
-  entities         SourceEntity[]
-  items            SourceItem[]
-  tasks            Task[]
-  findings         Finding[]
+  id                   String             @id @default(uuid())
+  code                 String
+  name                 String
+  sourceType           SourceType
+  issuingAuthorityId   String?
+  effectiveDate        DateTime?
+  reviewDate           DateTime?
+  status               SourceStatus       @default(DRAFT)
+  teamId               String
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  issuingAuthority     IssuingAuthority?  @relation(fields: [issuingAuthorityId], references: [id], onDelete: SetNull)
+  team                 Team               @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  entities             SourceEntity[]
+  items                SourceItem[]
+  tasks                Task[]
+  findings             Finding[]
 
   @@unique([code, teamId])
   @@index([teamId])
+  @@index([issuingAuthorityId])
 }
 
 model SourceEntity {

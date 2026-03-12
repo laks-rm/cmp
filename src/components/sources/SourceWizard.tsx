@@ -25,6 +25,13 @@ type Entity = {
   name: string;
 };
 
+type IssuingAuthority = {
+  id: string;
+  name: string;
+  abbreviation: string | null;
+  country: string | null;
+};
+
 type TaskDefinition = {
   tempId: string;
   name: string;
@@ -62,7 +69,12 @@ type SourceWizardProps = {
     code: string;
     name: string;
     sourceType: string;
-    issuingAuthority: string | null;
+    issuingAuthority: {
+      id: string;
+      name: string;
+      abbreviation: string | null;
+      country: string | null;
+    } | null;
     effectiveDate?: string | null;
     reviewDate?: string | null;
     defaultFrequency: string;
@@ -93,13 +105,24 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
   const [teams, setTeams] = useState<Team[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
+  const [issuingAuthorities, setIssuingAuthorities] = useState<IssuingAuthority[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
 
   // Step 1: Source Details
   const [sourceType, setSourceType] = useState(existingSource?.sourceType || "REGULATION");
   const [sourceName, setSourceName] = useState(existingSource?.name || "");
   const [sourceCode, setSourceCode] = useState(existingSource?.code || "");
-  const [issuingAuthority, setIssuingAuthority] = useState(existingSource?.issuingAuthority || "");
+  const [sourceCodeError, setSourceCodeError] = useState("");
+  const [isValidatingCode, setIsValidatingCode] = useState(false);
+  const [issuingAuthorityId, setIssuingAuthorityId] = useState(existingSource?.issuingAuthority?.id || "");
+  const [authoritySearchQuery, setAuthoritySearchQuery] = useState("");
+  const [authorityDropdownOpen, setAuthorityDropdownOpen] = useState(false);
+  const [showAddAuthorityForm, setShowAddAuthorityForm] = useState(false);
+  const [newAuthorityForm, setNewAuthorityForm] = useState({
+    name: "",
+    abbreviation: "",
+    country: "",
+  });
   const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>(
     existingSource?.entities.map((e) => e.entity.id) || []
   );
@@ -112,11 +135,29 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
   // Step 2: Items & Tasks
   const [items, setItems] = useState<ItemWithTasks[]>([]);
   const [showAddItemForm, setShowAddItemForm] = useState(false);
+  const [addingTaskToItemId, setAddingTaskToItemId] = useState<string | null>(null);
   const [newItemForm, setNewItemForm] = useState({
     reference: "",
     title: "",
     description: "",
     isInformational: false,
+    taskName: "",
+    taskDescription: "",
+    expectedOutcome: "",
+    assigneeId: "",
+    picId: "",
+    reviewerId: "",
+    frequency: defaultFrequency,
+    quarter: "",
+    riskRating: "MEDIUM",
+    startDate: "",
+    dueDate: "",
+    evidenceRequired: false,
+    reviewRequired: true,
+    clickupUrl: "",
+    gdriveUrl: "",
+  });
+  const [newTaskForm, setNewTaskForm] = useState({
     taskName: "",
     taskDescription: "",
     expectedOutcome: "",
@@ -150,6 +191,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       fetchTeams();
       fetchUsers();
       fetchEntities();
+      fetchIssuingAuthorities();
     }
   }, [isOpen]);
 
@@ -211,6 +253,54 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     }
   };
 
+  const fetchIssuingAuthorities = async () => {
+    try {
+      const res = await fetch("/api/issuing-authorities");
+      if (res.ok) {
+        const data = await res.json();
+        setIssuingAuthorities(data.authorities);
+      }
+    } catch (error) {
+      console.error("Failed to fetch issuing authorities:", error);
+    }
+  };
+
+  const validateSourceCode = async (code: string) => {
+    if (!code || !teamId) return;
+
+    setIsValidatingCode(true);
+    setSourceCodeError("");
+
+    try {
+      const params = new URLSearchParams({
+        code: code.toUpperCase(),
+        teamId,
+      });
+
+      if (existingSource?.id) {
+        params.append("excludeId", existingSource.id);
+      }
+
+      const res = await fetch(`/api/sources/validate-code?${params}`);
+      const data = await res.json();
+
+      if (!data.isAvailable) {
+        setSourceCodeError("This code is already in use");
+        if (data.suggestedCode) {
+          // Auto-apply suggested code
+          setSourceCode(data.suggestedCode);
+          toast(`Code updated to ${data.suggestedCode} (original was taken)`, {
+            icon: "ℹ️",
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Failed to validate source code:", error);
+    } finally {
+      setIsValidatingCode(false);
+    }
+  };
+
   const generateSourceCode = (name: string): string => {
     const currentYear = new Date().getFullYear();
     const words = name
@@ -233,6 +323,40 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     if (!sourceCode && sourceName) {
       setSourceCode(generateSourceCode(sourceName));
     }
+    // Validate uniqueness
+    if (sourceCode && teamId) {
+      validateSourceCode(sourceCode);
+    }
+  };
+
+  const handleAddNewAuthority = async () => {
+    if (!newAuthorityForm.name) {
+      toast.error("Authority name is required");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/issuing-authorities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newAuthorityForm),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setIssuingAuthorities([...issuingAuthorities, data.authority]);
+        setIssuingAuthorityId(data.authority.id);
+        setShowAddAuthorityForm(false);
+        setNewAuthorityForm({ name: "", abbreviation: "", country: "" });
+        toast.success("Authority added successfully");
+      } else {
+        const error = await res.json();
+        toast.error(error.error || "Failed to add authority");
+      }
+    } catch (error) {
+      console.error("Failed to add authority:", error);
+      toast.error("Failed to add authority");
+    }
   };
 
   const toggleEntity = (entityId: string) => {
@@ -252,6 +376,22 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       return;
     }
 
+    // Check if source code has validation error
+    if (sourceCodeError) {
+      toast.error("Please fix the source code error before continuing");
+      return;
+    }
+
+    // Validate source code one more time before proceeding
+    if (teamId) {
+      await validateSourceCode(sourceCode);
+      // Check again after validation
+      if (sourceCodeError) {
+        toast.error("Source code is not unique");
+        return;
+      }
+    }
+
     if (!existingSource) {
       // Create draft source
       try {
@@ -263,7 +403,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
             code: sourceCode,
             name: sourceName,
             sourceType,
-            issuingAuthority,
+            issuingAuthorityId: issuingAuthorityId || null,
             effectiveDate: effectiveDate || null,
             reviewDate: reviewDate || null,
             defaultFrequency,
@@ -380,6 +520,65 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     toast.success("Task removed");
   };
 
+  const handleAddTaskToExistingItem = (itemTempId: string) => {
+    // Validation
+    if (!newTaskForm.taskName) {
+      toast.error("Task name is required");
+      return;
+    }
+
+    const taskTempId = `task-${Date.now()}-${Math.random()}`;
+
+    const newTask: TaskDefinition = {
+      tempId: taskTempId,
+      name: newTaskForm.taskName,
+      description: newTaskForm.taskDescription,
+      expectedOutcome: newTaskForm.expectedOutcome,
+      assigneeId: newTaskForm.assigneeId,
+      picId: newTaskForm.picId,
+      reviewerId: newTaskForm.reviewerId,
+      frequency: newTaskForm.frequency,
+      quarter: newTaskForm.quarter,
+      riskRating: newTaskForm.riskRating,
+      startDate: newTaskForm.startDate,
+      dueDate: newTaskForm.dueDate,
+      evidenceRequired: newTaskForm.evidenceRequired,
+      reviewRequired: newTaskForm.reviewRequired,
+      clickupUrl: newTaskForm.clickupUrl,
+      gdriveUrl: newTaskForm.gdriveUrl,
+    };
+
+    setItems((prev) =>
+      prev.map((item) =>
+        item.tempId === itemTempId
+          ? { ...item, tasks: [...item.tasks, newTask] }
+          : item
+      )
+    );
+
+    // Reset form and close
+    setNewTaskForm({
+      taskName: "",
+      taskDescription: "",
+      expectedOutcome: "",
+      assigneeId: "",
+      picId: "",
+      reviewerId: "",
+      frequency: defaultFrequency,
+      quarter: "",
+      riskRating: "MEDIUM",
+      startDate: "",
+      dueDate: "",
+      evidenceRequired: selectedTeam?.evidenceRequired || false,
+      reviewRequired: selectedTeam?.approvalRequired || true,
+      clickupUrl: "",
+      gdriveUrl: "",
+    });
+    setAddingTaskToItemId(null);
+
+    toast.success("Task added");
+  };
+
   const handleStep2Next = () => {
     if (items.length === 0) {
       toast.error("Please add at least one item");
@@ -493,12 +692,28 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                   <input
                     type="text"
                     value={sourceCode}
-                    onChange={(e) => setSourceCode(e.target.value.toUpperCase())}
+                    onChange={(e) => {
+                      setSourceCode(e.target.value.toUpperCase());
+                      setSourceCodeError(""); // Clear error on change
+                    }}
                     onBlur={handleSourceCodeBlur}
                     placeholder="Auto-generates from name"
                     className="w-full rounded-lg border px-3 py-2 font-mono text-sm outline-none transition-colors focus:border-[var(--blue)]"
-                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    style={{
+                      borderColor: sourceCodeError ? "var(--red)" : "var(--border)",
+                      color: "var(--text-primary)",
+                    }}
                   />
+                  {isValidatingCode && (
+                    <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                      Validating code...
+                    </p>
+                  )}
+                  {sourceCodeError && (
+                    <p className="mt-1 text-xs" style={{ color: "var(--red)" }}>
+                      {sourceCodeError}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -522,14 +737,164 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                   <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
                     Issuing Authority
                   </label>
-                  <input
-                    type="text"
-                    value={issuingAuthority}
-                    onChange={(e) => setIssuingAuthority(e.target.value)}
-                    placeholder="e.g., MFSA, EBA"
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
-                    style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
-                  />
+                  <div className="relative">
+                    <button
+                      onClick={() => setAuthorityDropdownOpen(!authorityDropdownOpen)}
+                      className="flex min-h-[38px] w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                      style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                    >
+                      <span className="flex-1">
+                        {issuingAuthorityId ? (
+                          (() => {
+                            const authority = issuingAuthorities.find((a) => a.id === issuingAuthorityId);
+                            if (!authority) return "Select authority...";
+                            return authority.abbreviation
+                              ? `${authority.abbreviation} — ${authority.name} (${authority.country || "N/A"})`
+                              : `${authority.name} (${authority.country || "N/A"})`;
+                          })()
+                        ) : (
+                          <span style={{ color: "var(--text-muted)" }}>Select authority...</span>
+                        )}
+                      </span>
+                      <ChevronDown size={16} style={{ color: "var(--text-muted)" }} />
+                    </button>
+
+                    {authorityDropdownOpen && (
+                      <div
+                        className="absolute z-10 mt-1 w-full rounded-lg border bg-white shadow-lg"
+                        style={{ borderColor: "var(--border)" }}
+                      >
+                        <div className="border-b p-2" style={{ borderColor: "var(--border)" }}>
+                          <input
+                            type="text"
+                            placeholder="Search authorities..."
+                            value={authoritySearchQuery}
+                            onChange={(e) => setAuthoritySearchQuery(e.target.value)}
+                            className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--blue)]"
+                            style={{ borderColor: "var(--border)" }}
+                          />
+                        </div>
+
+                        <div className="max-h-60 overflow-y-auto p-2">
+                          {issuingAuthorities
+                            .filter((authority) => {
+                              const query = authoritySearchQuery.toLowerCase();
+                              return (
+                                authority.name.toLowerCase().includes(query) ||
+                                (authority.abbreviation && authority.abbreviation.toLowerCase().includes(query)) ||
+                                (authority.country && authority.country.toLowerCase().includes(query))
+                              );
+                            })
+                            .map((authority) => (
+                              <button
+                                key={authority.id}
+                                onClick={() => {
+                                  setIssuingAuthorityId(authority.id);
+                                  setAuthorityDropdownOpen(false);
+                                  setAuthoritySearchQuery("");
+                                }}
+                                className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-sm transition-colors hover:bg-[var(--bg-subtle)]"
+                              >
+                                <span style={{ color: "var(--text-primary)" }}>
+                                  {authority.abbreviation ? (
+                                    <>
+                                      <span className="font-medium">{authority.abbreviation}</span> —{" "}
+                                      {authority.name}{" "}
+                                      <span style={{ color: "var(--text-muted)" }}>
+                                        ({authority.country || "N/A"})
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      {authority.name}{" "}
+                                      <span style={{ color: "var(--text-muted)" }}>
+                                        ({authority.country || "N/A"})
+                                      </span>
+                                    </>
+                                  )}
+                                </span>
+                              </button>
+                            ))}
+
+                          {issuingAuthorities.filter((authority) => {
+                            const query = authoritySearchQuery.toLowerCase();
+                            return (
+                              authority.name.toLowerCase().includes(query) ||
+                              (authority.abbreviation && authority.abbreviation.toLowerCase().includes(query)) ||
+                              (authority.country && authority.country.toLowerCase().includes(query))
+                            );
+                          }).length === 0 && (
+                            <div className="p-2 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+                              No authorities found
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Add New Authority Option (Admin only) */}
+                        <div className="border-t p-2" style={{ borderColor: "var(--border)" }}>
+                          {showAddAuthorityForm ? (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                placeholder="Authority Name *"
+                                value={newAuthorityForm.name}
+                                onChange={(e) => setNewAuthorityForm({ ...newAuthorityForm, name: e.target.value })}
+                                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--blue)]"
+                                style={{ borderColor: "var(--border)" }}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Abbreviation (optional)"
+                                value={newAuthorityForm.abbreviation}
+                                onChange={(e) =>
+                                  setNewAuthorityForm({ ...newAuthorityForm, abbreviation: e.target.value })
+                                }
+                                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--blue)]"
+                                style={{ borderColor: "var(--border)" }}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Country (optional)"
+                                value={newAuthorityForm.country}
+                                onChange={(e) =>
+                                  setNewAuthorityForm({ ...newAuthorityForm, country: e.target.value })
+                                }
+                                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--blue)]"
+                                style={{ borderColor: "var(--border)" }}
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => {
+                                    setShowAddAuthorityForm(false);
+                                    setNewAuthorityForm({ name: "", abbreviation: "", country: "" });
+                                  }}
+                                  className="flex-1 rounded-lg border px-3 py-2 text-sm transition-colors"
+                                  style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={handleAddNewAuthority}
+                                  className="flex-1 rounded-lg px-3 py-2 text-sm text-white"
+                                  style={{ backgroundColor: "var(--blue)" }}
+                                >
+                                  Add
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setShowAddAuthorityForm(true)}
+                              className="w-full rounded-lg p-2 text-left text-sm transition-colors hover:bg-[var(--bg-subtle)]"
+                              style={{ color: "var(--blue)" }}
+                            >
+                              + Add New Authority
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -779,17 +1144,340 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                           ))}
 
                           {/* Add Another Task Link */}
-                          <button
-                            onClick={() => {
-                              // TODO: Implement add task to existing item
-                              toast("Add task to existing item coming soon");
-                            }}
-                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
-                            style={{ color: "var(--blue)" }}
-                          >
-                            <Plus size={16} />
-                            Add Another Task
-                          </button>
+                          {addingTaskToItemId === item.tempId ? (
+                            <div className="mt-4 space-y-4 rounded-lg border p-4" style={{ borderColor: "var(--blue-mid)", backgroundColor: "var(--blue-light)" }}>
+                              <h4 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                                Add Task to {item.reference}
+                              </h4>
+
+                              {/* Task Form Fields */}
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                    Task Name <span style={{ color: "var(--red)" }}>*</span>
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={newTaskForm.taskName}
+                                    onChange={(e) => setNewTaskForm({ ...newTaskForm, taskName: e.target.value })}
+                                    placeholder="e.g., Monthly Transaction Monitoring Review"
+                                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                    style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                    Task Description
+                                  </label>
+                                  <textarea
+                                    value={newTaskForm.taskDescription}
+                                    onChange={(e) => setNewTaskForm({ ...newTaskForm, taskDescription: e.target.value })}
+                                    rows={2}
+                                    placeholder="Optional task description"
+                                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                    style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                    Expected Outcome
+                                  </label>
+                                  <textarea
+                                    value={newTaskForm.expectedOutcome}
+                                    onChange={(e) => setNewTaskForm({ ...newTaskForm, expectedOutcome: e.target.value })}
+                                    rows={2}
+                                    placeholder="What should be achieved when this task is completed"
+                                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                    style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                  />
+                                </div>
+
+                                {/* Assignee, PIC, Reviewer Row */}
+                                <div className={selectedTeam?.approvalRequired ? "grid grid-cols-3 gap-4" : "grid grid-cols-2 gap-4"}>
+                                  <div>
+                                    <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                      Assignee
+                                    </label>
+                                    <select
+                                      value={newTaskForm.assigneeId}
+                                      onChange={(e) => setNewTaskForm({ ...newTaskForm, assigneeId: e.target.value })}
+                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                    >
+                                      <option value="">Select assignee...</option>
+                                      {users.map((user) => (
+                                        <option key={user.id} value={user.id}>
+                                          {user.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                      PIC
+                                    </label>
+                                    <select
+                                      value={newTaskForm.picId}
+                                      onChange={(e) => setNewTaskForm({ ...newTaskForm, picId: e.target.value })}
+                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                    >
+                                      <option value="">Select PIC...</option>
+                                      {users.map((user) => (
+                                        <option key={user.id} value={user.id}>
+                                          {user.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  {selectedTeam?.approvalRequired && (
+                                    <div>
+                                      <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                        Reviewer
+                                      </label>
+                                      <select
+                                        value={newTaskForm.reviewerId}
+                                        onChange={(e) => setNewTaskForm({ ...newTaskForm, reviewerId: e.target.value })}
+                                        className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                        style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                      >
+                                        <option value="">Select reviewer...</option>
+                                        {users.map((user) => (
+                                          <option key={user.id} value={user.id}>
+                                            {user.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Frequency, Risk, Quarter Row */}
+                                <div className="grid grid-cols-3 gap-4">
+                                  <div>
+                                    <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                      Frequency
+                                    </label>
+                                    <select
+                                      value={newTaskForm.frequency}
+                                      onChange={(e) => setNewTaskForm({ ...newTaskForm, frequency: e.target.value })}
+                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                    >
+                                      {FREQUENCIES.map((freq) => (
+                                        <option key={freq} value={freq}>
+                                          {freq.replace(/_/g, " ")}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                      Risk Rating
+                                    </label>
+                                    <select
+                                      value={newTaskForm.riskRating}
+                                      onChange={(e) => setNewTaskForm({ ...newTaskForm, riskRating: e.target.value })}
+                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                    >
+                                      {RISK_RATINGS.map((rating) => (
+                                        <option key={rating} value={rating}>
+                                          {rating}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                      Quarter
+                                    </label>
+                                    <select
+                                      value={newTaskForm.quarter}
+                                      onChange={(e) => setNewTaskForm({ ...newTaskForm, quarter: e.target.value })}
+                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                    >
+                                      <option value="">Auto (from due date)</option>
+                                      {QUARTERS.map((q) => (
+                                        <option key={q} value={q}>
+                                          {q}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+
+                                {/* Start Date, Due Date Row */}
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                      Start Date
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={newTaskForm.startDate}
+                                      onChange={(e) => setNewTaskForm({ ...newTaskForm, startDate: e.target.value })}
+                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                      Due Date
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={newTaskForm.dueDate}
+                                      onChange={(e) => setNewTaskForm({ ...newTaskForm, dueDate: e.target.value })}
+                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Toggles Row */}
+                                <div className={selectedTeam?.approvalRequired ? "grid grid-cols-2 gap-4" : "grid grid-cols-1"}>
+                                  <div>
+                                    <label className="flex items-center gap-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={newTaskForm.evidenceRequired}
+                                        onChange={(e) =>
+                                          setNewTaskForm({ ...newTaskForm, evidenceRequired: e.target.checked })
+                                        }
+                                        className="rounded"
+                                      />
+                                      <span className="text-sm" style={{ color: "var(--text-primary)" }}>
+                                        Evidence Required
+                                      </span>
+                                    </label>
+                                  </div>
+
+                                  {selectedTeam?.approvalRequired && (
+                                    <div>
+                                      <label className="flex items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={newTaskForm.reviewRequired}
+                                          onChange={(e) =>
+                                            setNewTaskForm({ ...newTaskForm, reviewRequired: e.target.checked })
+                                          }
+                                          className="rounded"
+                                        />
+                                        <span className="text-sm" style={{ color: "var(--text-primary)" }}>
+                                          Review Required
+                                        </span>
+                                      </label>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* External Links Row */}
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                      ClickUp Link
+                                    </label>
+                                    <input
+                                      type="url"
+                                      value={newTaskForm.clickupUrl}
+                                      onChange={(e) => setNewTaskForm({ ...newTaskForm, clickupUrl: e.target.value })}
+                                      placeholder="https://..."
+                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                      Google Drive Link
+                                    </label>
+                                    <input
+                                      type="url"
+                                      value={newTaskForm.gdriveUrl}
+                                      onChange={(e) => setNewTaskForm({ ...newTaskForm, gdriveUrl: e.target.value })}
+                                      placeholder="https://..."
+                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Form Actions */}
+                              <div className="flex justify-end gap-3 pt-2">
+                                <button
+                                  onClick={() => {
+                                    setAddingTaskToItemId(null);
+                                    setNewTaskForm({
+                                      taskName: "",
+                                      taskDescription: "",
+                                      expectedOutcome: "",
+                                      assigneeId: "",
+                                      picId: "",
+                                      reviewerId: "",
+                                      frequency: defaultFrequency,
+                                      quarter: "",
+                                      riskRating: "MEDIUM",
+                                      startDate: "",
+                                      dueDate: "",
+                                      evidenceRequired: selectedTeam?.evidenceRequired || false,
+                                      reviewRequired: selectedTeam?.approvalRequired || true,
+                                      clickupUrl: "",
+                                      gdriveUrl: "",
+                                    });
+                                  }}
+                                  className="h-9 rounded-lg border px-4 text-sm font-medium transition-colors"
+                                  style={{ borderColor: "var(--border)", color: "var(--text-secondary)", backgroundColor: "white" }}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={() => handleAddTaskToExistingItem(item.tempId)}
+                                  className="h-9 rounded-lg px-4 text-sm font-medium text-white transition-opacity"
+                                  style={{ backgroundColor: "var(--blue)" }}
+                                >
+                                  Add Task
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setAddingTaskToItemId(item.tempId);
+                                setNewTaskForm({
+                                  taskName: "",
+                                  taskDescription: "",
+                                  expectedOutcome: "",
+                                  assigneeId: "",
+                                  picId: "",
+                                  reviewerId: "",
+                                  frequency: defaultFrequency,
+                                  quarter: "",
+                                  riskRating: "MEDIUM",
+                                  startDate: "",
+                                  dueDate: "",
+                                  evidenceRequired: selectedTeam?.evidenceRequired || false,
+                                  reviewRequired: selectedTeam?.approvalRequired || true,
+                                  clickupUrl: "",
+                                  gdriveUrl: "",
+                                });
+                              }}
+                              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
+                              style={{ color: "var(--blue)" }}
+                            >
+                              <Plus size={16} />
+                              Add Another Task
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

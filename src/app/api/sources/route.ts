@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
       where,
       include: {
         team: true,
+        issuingAuthority: true,
         entities: {
           include: {
             entity: true,
@@ -118,7 +119,7 @@ export async function POST(req: NextRequest) {
         code: validatedData.code,
         name: validatedData.name,
         sourceType: validatedData.sourceType,
-        issuingAuthority: validatedData.issuingAuthority,
+        issuingAuthorityId: validatedData.issuingAuthorityId || null,
         effectiveDate: validatedData.effectiveDate ? new Date(validatedData.effectiveDate) : null,
         reviewDate: validatedData.reviewDate ? new Date(validatedData.reviewDate) : null,
         teamId: validatedData.teamId,
@@ -131,6 +132,7 @@ export async function POST(req: NextRequest) {
       },
       include: {
         team: true,
+        issuingAuthority: true,
         entities: {
           include: {
             entity: true,

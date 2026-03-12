@@ -298,7 +298,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
   const isReviewer = task?.reviewerId === session?.user.userId;
   const isPendingReview = task?.status === "PENDING_REVIEW";
   const isInProgress = task?.status === "IN_PROGRESS";
-  const requiresApproval = task?.source.team.approvalRequired;
+  const requiresApproval = task?.source?.team?.approvalRequired ?? true;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)" }}>

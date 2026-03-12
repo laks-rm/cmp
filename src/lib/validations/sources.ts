@@ -12,7 +12,7 @@ export const createSourceSchema = z.object({
     "CONTRACTUAL_OBLIGATION",
     "REGULATORY_GUIDANCE",
   ]),
-  issuingAuthority: z.string().max(255).trim().optional(),
+  issuingAuthorityId: z.string().uuid().optional().nullable(),
   effectiveDate: z.string().optional(),
   reviewDate: z.string().optional(),
   teamId: z.string().uuid(),

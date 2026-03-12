@@ -115,7 +115,7 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
     if (validatedData.name) updateData.name = validatedData.name;
     if (validatedData.code) updateData.code = validatedData.code;
     if (validatedData.sourceType) updateData.sourceType = validatedData.sourceType;
-    if (validatedData.issuingAuthority !== undefined) updateData.issuingAuthority = validatedData.issuingAuthority;
+    if (validatedData.issuingAuthorityId !== undefined) updateData.issuingAuthorityId = validatedData.issuingAuthorityId;
     if (validatedData.effectiveDate) updateData.effectiveDate = new Date(validatedData.effectiveDate);
     if (validatedData.reviewDate) updateData.reviewDate = new Date(validatedData.reviewDate);
     if (validatedData.status) updateData.status = validatedData.status;
