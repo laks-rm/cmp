@@ -13,6 +13,7 @@ import {
   Clock,
   Send,
   Info,
+  Download,
 } from "lucide-react";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { EntityBadge } from "@/components/ui/EntityBadge";
@@ -30,6 +31,7 @@ type Evidence = {
   fileName: string;
   fileSize: number;
   fileUrl: string;
+  mimeType: string;
   uploadedBy: User;
   createdAt: string;
 };
@@ -210,6 +212,19 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
     }
   };
 
+  const handleDownloadEvidence = (evidenceId: string, fileName: string) => {
+    const link = document.createElement("a");
+    link.href = `/api/files/${evidenceId}`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleOpenEvidence = (evidenceId: string) => {
+    window.open(`/api/files/${evidenceId}`, "_blank");
+  };
+
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
 
@@ -357,7 +372,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                   <Info size={20} style={{ color: "var(--blue)", flexShrink: 0, marginTop: 2 }} />
                   <div className="flex-1">
                     <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                      <strong>Assignee</strong> executes the task. <strong>Person in Charge (PIC)</strong> monitors progress and ensures completion.
+                      <strong>Department / Team Responsible</strong> executes the task. <strong>Person in Charge (PIC)</strong> oversees completion and ensures timely delivery.
                     </p>
                   </div>
                   <button
@@ -413,7 +428,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                        Assignee
+                        Department / Team Responsible
                       </label>
                       {task.assignee ? (
                         <div className="flex items-center gap-2">
@@ -428,7 +443,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                           </span>
                         </div>
                       ) : (
-                        <span className="text-sm" style={{ color: "var(--text-muted)" }}>Unassigned</span>
+                        <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not assigned</span>
                       )}
                     </div>
 
@@ -619,40 +634,85 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                   {/* Evidence list */}
                   {evidence.length > 0 ? (
                     <div className="space-y-2">
-                      {evidence.map((e) => (
-                        <div
-                          key={e.id}
-                          className="flex items-center justify-between rounded-lg border p-3"
-                          style={{ borderColor: "var(--border)", backgroundColor: "white" }}
-                        >
-                          <div className="flex items-center gap-3">
-                            <FileText size={20} style={{ color: "var(--blue)" }} />
-                            <div>
-                              <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                {e.fileName}
-                              </p>
-                              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                {(e.fileSize / 1024).toFixed(1)} KB · Uploaded by {e.uploadedBy.name} · {format(new Date(e.createdAt), "MMM d, h:mm a")}
-                              </p>
+                      {evidence.map((e) => {
+                        const isViewable = ["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp"].includes(e.mimeType);
+                        
+                        return (
+                          <div
+                            key={e.id}
+                            className="flex items-center justify-between rounded-lg border p-3"
+                            style={{ borderColor: "var(--border)", backgroundColor: "white" }}
+                          >
+                            <div className="flex items-center gap-3 flex-1">
+                              <FileText size={20} style={{ color: "var(--blue)" }} />
+                              <div className="flex-1">
+                                <button
+                                  onClick={() => handleOpenEvidence(e.id)}
+                                  className="text-sm font-medium hover:underline text-left"
+                                  style={{ color: "var(--blue)" }}
+                                >
+                                  {e.fileName}
+                                </button>
+                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                                  {(e.fileSize / 1024).toFixed(1)} KB · Uploaded by {e.uploadedBy?.name ?? "Unknown"} · {format(new Date(e.createdAt), "MMM d, h:mm a")}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isViewable && (
+                                <button
+                                  onClick={() => handleOpenEvidence(e.id)}
+                                  className="rounded-md p-1.5 transition-colors"
+                                  style={{ color: "var(--text-muted)" }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = "var(--blue-light)";
+                                    e.currentTarget.style.color = "var(--blue)";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = "transparent";
+                                    e.currentTarget.style.color = "var(--text-muted)";
+                                  }}
+                                  title="Open in new tab"
+                                >
+                                  <ExternalLink size={16} />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDownloadEvidence(e.id, e.fileName)}
+                                className="rounded-md p-1.5 transition-colors"
+                                style={{ color: "var(--text-muted)" }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "var(--green-light)";
+                                  e.currentTarget.style.color = "var(--green)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = "transparent";
+                                  e.currentTarget.style.color = "var(--text-muted)";
+                                }}
+                                title="Download"
+                              >
+                                <Download size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteEvidence(e.id)}
+                                className="rounded-md p-1.5 transition-colors"
+                                style={{ color: "var(--text-muted)" }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "var(--red-light)";
+                                  e.currentTarget.style.color = "var(--red)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = "transparent";
+                                  e.currentTarget.style.color = "var(--text-muted)";
+                                }}
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             </div>
                           </div>
-                          <button
-                            onClick={() => handleDeleteEvidence(e.id)}
-                            className="rounded-md p-1.5 transition-colors"
-                            style={{ color: "var(--text-muted)" }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = "var(--red-light)";
-                              e.currentTarget.style.color = "var(--red)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = "transparent";
-                              e.currentTarget.style.color = "var(--text-muted)";
-                            }}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="text-center text-sm" style={{ color: "var(--text-muted)" }}>
@@ -671,14 +731,14 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                         <div key={comment.id} className="flex gap-3">
                           <div
                             className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-                            style={{ background: comment.author.avatarColor || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
+                            style={{ background: comment.author?.avatarColor || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
                           >
-                            {comment.author.initials}
+                            {comment.author?.initials ?? "?"}
                           </div>
                           <div className="flex-1">
                             <div className="mb-1 flex items-baseline gap-2">
                               <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                {comment.author.name}
+                                {comment.author?.name ?? "Unknown"}
                               </span>
                               <span className="text-xs" style={{ color: "var(--text-muted)" }}>
                                 {format(new Date(comment.createdAt), "MMM d, h:mm a")}
@@ -745,7 +805,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                         </div>
                         <div className="flex-1 pb-4">
                           <p className="text-sm" style={{ color: "var(--text-primary)" }}>
-                            <strong>{entry.user.name}</strong> {entry.action.toLowerCase().replace(/_/g, " ")}
+                            <strong>{entry.user?.name ?? "System"}</strong> {entry.action.toLowerCase().replace(/_/g, " ")}
                             {entry.details && typeof entry.details === "object" && "oldStatus" in entry.details && "newStatus" in entry.details && (
                               <> from <strong>{String(entry.details.oldStatus).replace(/_/g, " ")}</strong> to <strong>{String(entry.details.newStatus).replace(/_/g, " ")}</strong></>
                             )}

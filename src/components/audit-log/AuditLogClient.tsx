@@ -224,7 +224,7 @@ export function AuditLogClient() {
 
                 <div className="flex-1 pb-4">
                   <p className="text-sm leading-relaxed" style={{ color: "var(--text-primary)" }}>
-                    <strong>{entry.user.name}</strong> {formatActionMessage(entry)}
+                    <strong>{entry.user?.name ?? "System"}</strong> {formatActionMessage(entry)}
                   </p>
                   <div className="mt-1 flex items-center gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
                     <span>{format(new Date(entry.createdAt), "MMM d, yyyy 'at' h:mm a")}</span>

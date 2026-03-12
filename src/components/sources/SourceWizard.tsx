@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, ChevronRight, ChevronLeft, AlertCircle, CheckCircle, Plus, Trash2, ChevronDown } from "lucide-react";
+import { X, ChevronRight, ChevronLeft, AlertCircle, CheckCircle, Plus, Trash2, ChevronDown, FileText, Table, Upload, Edit3, Check, Loader } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import toast from "react-hot-toast";
 
@@ -52,7 +52,8 @@ type TaskDefinition = {
 };
 
 type ItemWithTasks = {
-  tempId: string;
+  id?: string; // For existing items from DB
+  tempId: string; // For new items
   reference: string;
   title: string;
   description: string;
@@ -100,6 +101,7 @@ const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
 export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardProps) {
   const [step, setStep] = useState(existingSource ? 2 : 1);
   const [loading, setLoading] = useState(false);
+  const [createdSourceId, setCreatedSourceId] = useState<string | null>(null);
 
   // Reference data
   const [teams, setTeams] = useState<Team[]>([]);
@@ -136,6 +138,78 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
   const [items, setItems] = useState<ItemWithTasks[]>([]);
   const [showAddItemForm, setShowAddItemForm] = useState(false);
   const [addingTaskToItemId, setAddingTaskToItemId] = useState<string | null>(null);
+  
+  // Step 2: Input Method Selection
+  type InputMethod = "ai-extract" | "spreadsheet" | "one-by-one";
+  const [inputMethod, setInputMethod] = useState<InputMethod>("ai-extract");
+  
+  // Step 2: AI Extract state
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [extractionLevel, setExtractionLevel] = useState("articles-sub");
+  const [taskSuggestion, setTaskSuggestion] = useState("full");
+  const [additionalInstructions, setAdditionalInstructions] = useState("");
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractionProgress, setExtractionProgress] = useState<string>("");
+  const [extractedClauses, setExtractedClauses] = useState<Array<{
+    reference: string;
+    title: string;
+    description: string;
+    isInformational: boolean;
+    included: boolean;
+    expanded: boolean;
+    tasks: Array<{
+      id: string;
+      name: string;
+      frequency: string;
+      riskRating: string;
+      included: boolean;
+    }>;
+  }>>([]);
+  
+  // Step 2: Spreadsheet state
+  type SpreadsheetRow = {
+    id: string;
+    reference: string;
+    clauseTitle: string;
+    taskName: string;
+    frequency: string;
+    riskRating: string;
+    assigneeId: string;
+    picId: string;
+    dueDate: string;
+    isClauseRow: boolean; // true if this is a new clause, false if it's a task under a clause
+  };
+  const [spreadsheetData, setSpreadsheetData] = useState<SpreadsheetRow[]>([
+    {
+      id: `row-${Date.now()}-1`,
+      reference: "",
+      clauseTitle: "",
+      taskName: "",
+      frequency: "MONTHLY",
+      riskRating: "MEDIUM",
+      assigneeId: "",
+      picId: "",
+      dueDate: "",
+      isClauseRow: true,
+    },
+    {
+      id: `row-${Date.now()}-2`,
+      reference: "",
+      clauseTitle: "",
+      taskName: "",
+      frequency: "MONTHLY",
+      riskRating: "MEDIUM",
+      assigneeId: "",
+      picId: "",
+      dueDate: "",
+      isClauseRow: false,
+    },
+  ]);
+  const [pastedData, setPastedData] = useState("");
+  const [groupByClause, setGroupByClause] = useState(true);
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  
   const [newItemForm, setNewItemForm] = useState({
     reference: "",
     title: "",
@@ -177,6 +251,11 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
 
   // Step 3: Review (selected items for bulk actions)
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [bulkAssignOpen, setBulkAssignOpen] = useState(false);
+  const [bulkPICOpen, setBulkPICOpen] = useState(false);
+  const [bulkDueDateOpen, setBulkDueDateOpen] = useState(false);
+  const [bulkQuarterOpen, setBulkQuarterOpen] = useState(false);
+  const [bulkDueDateValue, setBulkDueDateValue] = useState("");
 
   // Step 4: Generation state
   const [generationPreview, setGenerationPreview] = useState({
@@ -264,6 +343,78 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       console.error("Failed to fetch issuing authorities:", error);
     }
   };
+
+  const fetchExistingItems = async (sourceId: string) => {
+    try {
+      const res = await fetch(`/api/sources/${sourceId}`);
+      if (res.ok) {
+        const source = await res.json();
+        if (source.items && source.items.length > 0) {
+          const loadedItems: ItemWithTasks[] = source.items.map((item: {
+            id: string;
+            reference: string;
+            title: string;
+            description: string | null;
+            isInformational: boolean;
+            tasks: Array<{
+              id: string;
+              name: string;
+              description: string | null;
+              expectedOutcome: string | null;
+              frequency: string;
+              quarter: string | null;
+              riskRating: string;
+              dueDate: string | null;
+              startDate: string | null;
+              evidenceRequired: boolean;
+              reviewRequired: boolean;
+              clickupUrl: string | null;
+              gdriveUrl: string | null;
+              assigneeId: string | null;
+              picId: string | null;
+              reviewerId: string | null;
+            }>;
+          }) => ({
+            id: item.id,
+            tempId: `existing-${item.id}`,
+            reference: item.reference,
+            title: item.title,
+            description: item.description || "",
+            isInformational: item.isInformational,
+            tasks: item.tasks.map((task) => ({
+              tempId: `existing-task-${task.id}`,
+              name: task.name,
+              description: task.description || "",
+              expectedOutcome: task.expectedOutcome || "",
+              assigneeId: task.assigneeId || "",
+              picId: task.picId || "",
+              reviewerId: task.reviewerId || "",
+              frequency: task.frequency,
+              quarter: task.quarter || "",
+              riskRating: task.riskRating,
+              startDate: task.startDate || "",
+              dueDate: task.dueDate || "",
+              evidenceRequired: task.evidenceRequired,
+              reviewRequired: task.reviewRequired,
+              clickupUrl: task.clickupUrl || "",
+              gdriveUrl: task.gdriveUrl || "",
+            })),
+            expanded: false,
+          }));
+          setItems(loadedItems);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch existing items:", error);
+    }
+  };
+
+  // Fetch existing items when modal opens with an existing source
+  useEffect(() => {
+    if (isOpen && existingSource?.id) {
+      fetchExistingItems(existingSource.id);
+    }
+  }, [isOpen, existingSource]);
 
   const validateSourceCode = async (code: string) => {
     if (!code || !teamId) return;
@@ -369,6 +520,250 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     setSelectedEntityIds((prev) => prev.filter((id) => id !== entityId));
   };
 
+  // AI Extract handlers
+  const handleFileUpload = (file: File) => {
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("File size exceeds 50MB limit");
+      return;
+    }
+    
+    const allowedTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/msword",
+      "text/plain",
+    ];
+    
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Only PDF, DOCX, and TXT files are supported");
+      return;
+    }
+    
+    setUploadedFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
+
+  const handleAIExtract = async () => {
+    if (!uploadedFile) {
+      toast.error("Please upload a document first");
+      return;
+    }
+
+    try {
+      setIsExtracting(true);
+      setExtractionProgress("Reading document...");
+
+      const formData = new FormData();
+      formData.append("file", uploadedFile);
+      formData.append("extractionLevel", extractionLevel);
+      formData.append("taskSuggestion", taskSuggestion);
+      formData.append("sourceType", sourceType);
+      if (additionalInstructions) {
+        formData.append("additionalInstructions", additionalInstructions);
+      }
+
+      setTimeout(() => setExtractionProgress("Extracting clauses..."), 2000);
+      setTimeout(() => setExtractionProgress("Generating task suggestions..."), 4000);
+      setTimeout(() => setExtractionProgress("Assigning risk ratings..."), 6000);
+
+      const res = await fetch("/api/sources/ai-extract", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to extract clauses");
+      }
+
+      const result = await res.json();
+      
+      const formattedClauses = result.data.clauses.map((clause: {
+        reference: string;
+        title: string;
+        description: string;
+        isInformational: boolean;
+        suggestedTasks: Array<{ name: string; frequency: string; riskRating: string }>;
+      }) => ({
+        reference: clause.reference,
+        title: clause.title,
+        description: clause.description,
+        isInformational: clause.isInformational,
+        included: true,
+        expanded: false,
+        tasks: clause.suggestedTasks.map((task, idx) => ({
+          id: `task-${Date.now()}-${idx}`,
+          name: task.name,
+          frequency: task.frequency,
+          riskRating: task.riskRating,
+          included: true,
+        })),
+      }));
+
+      setExtractedClauses(formattedClauses);
+      toast.success(
+        `AI extracted ${result.meta.clausesExtracted} clauses with ${result.meta.totalSuggestedTasks} suggested tasks`
+      );
+    } catch (error) {
+      console.error("AI extraction error:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to extract clauses");
+    } finally {
+      setIsExtracting(false);
+      setExtractionProgress("");
+    }
+  };
+
+  const handleApplyExtractedClauses = () => {
+    const newItems: ItemWithTasks[] = extractedClauses
+      .filter((clause) => clause.included)
+      .map((clause) => ({
+        tempId: `temp-${Date.now()}-${Math.random()}`,
+        reference: clause.reference,
+        title: clause.title,
+        description: clause.description,
+        isInformational: clause.isInformational,
+        expanded: false,
+        tasks: clause.tasks
+          .filter((task) => task.included)
+          .map((task) => ({
+            tempId: `task-${Date.now()}-${Math.random()}`,
+            name: task.name,
+            description: "",
+            expectedOutcome: "",
+            assigneeId: "",
+            picId: "",
+            reviewerId: "",
+            frequency: task.frequency,
+            quarter: "",
+            riskRating: task.riskRating,
+            startDate: "",
+            dueDate: "",
+            evidenceRequired: selectedTeam?.evidenceRequired || false,
+            reviewRequired: selectedTeam?.approvalRequired || true,
+            clickupUrl: "",
+            gdriveUrl: "",
+          })),
+      }));
+
+    setItems([...items, ...newItems]);
+    toast.success(`Added ${newItems.length} items with extracted tasks`);
+  };
+
+  // Spreadsheet handlers
+  const handleParsePastedData = () => {
+    if (!pastedData.trim()) {
+      toast.error("Please paste some data first");
+      return;
+    }
+
+    const rows = pastedData.trim().split("\n");
+    const parsedRows: SpreadsheetRow[] = [];
+    let currentReference = "";
+    let currentClauseTitle = "";
+
+    rows.forEach((row, idx) => {
+      const columns = row.split("\t");
+      if (columns.length < 3) return; // Need at least reference, title, task name
+
+      const reference = columns[0]?.trim() || "";
+      const title = columns[1]?.trim() || "";
+      const description = columns[2]?.trim() || "";
+      const taskName = columns[3]?.trim() || "";
+      const frequency = columns[4]?.trim() || "MONTHLY";
+      const riskRating = columns[5]?.trim() || "MEDIUM";
+
+      const isNewClause = reference !== "";
+      if (isNewClause) {
+        currentReference = reference;
+        currentClauseTitle = title;
+      }
+
+      if (taskName) {
+        parsedRows.push({
+          id: `row-${Date.now()}-${idx}`,
+          reference: isNewClause ? reference : currentReference,
+          clauseTitle: isNewClause ? title : currentClauseTitle,
+          taskName,
+          frequency: FREQUENCIES.includes(frequency) ? frequency : "MONTHLY",
+          riskRating: RISK_RATINGS.includes(riskRating) ? riskRating : "MEDIUM",
+          assigneeId: "",
+          picId: "",
+          dueDate: "",
+          isClauseRow: isNewClause,
+        });
+      }
+    });
+
+    setSpreadsheetData(parsedRows);
+    setPastedData("");
+    
+    const clauseCount = parsedRows.filter(r => r.isClauseRow).length;
+    toast.success(`Parsed ${clauseCount} clauses and ${parsedRows.length} tasks from pasted data`);
+  };
+
+  const handleApplySpreadsheetData = () => {
+    const clauseMap = new Map<string, { title: string; tasks: SpreadsheetRow[] }>();
+
+    spreadsheetData.forEach((row) => {
+      const key = row.reference;
+      if (!clauseMap.has(key)) {
+        clauseMap.set(key, { title: row.clauseTitle, tasks: [] });
+      }
+      clauseMap.get(key)!.tasks.push(row);
+    });
+
+    const newItems: ItemWithTasks[] = Array.from(clauseMap.entries()).map(
+      ([reference, data]) => ({
+        tempId: `temp-${Date.now()}-${Math.random()}`,
+        reference,
+        title: data.title,
+        description: "",
+        isInformational: false,
+        expanded: false,
+        tasks: data.tasks.map((task) => ({
+          tempId: `task-${Date.now()}-${Math.random()}`,
+          name: task.taskName,
+          description: "",
+          expectedOutcome: "",
+          assigneeId: task.assigneeId,
+          picId: task.picId,
+          reviewerId: "",
+          frequency: task.frequency,
+          quarter: "",
+          riskRating: task.riskRating,
+          startDate: "",
+          dueDate: task.dueDate,
+          evidenceRequired: selectedTeam?.evidenceRequired || false,
+          reviewRequired: selectedTeam?.approvalRequired || true,
+          clickupUrl: "",
+          gdriveUrl: "",
+        })),
+      })
+    );
+
+    setItems([...items, ...newItems]);
+    setSpreadsheetData([]);
+    toast.success(`Added ${newItems.length} clauses from spreadsheet`);
+  };
+
   const handleStep1Next = async () => {
     // Validation
     if (!sourceName || !sourceCode || selectedEntityIds.length === 0 || !teamId) {
@@ -418,10 +813,10 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           throw new Error(error.error || "Failed to create source");
         }
 
-        await res.json();
+        const createdSource = await res.json();
+        setCreatedSourceId(createdSource.id); // Store the created source ID
         toast.success("Source draft created");
-        // Store source ID for later steps
-        // For now, just move to step 2
+        // Move to step 2
         setStep(2);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Failed to create source";
@@ -520,13 +915,101 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     toast.success("Task removed");
   };
 
-  const handleAddTaskToExistingItem = (itemTempId: string) => {
+  const handleAddTaskToExistingItem = async (itemTempId: string) => {
     // Validation
     if (!newTaskForm.taskName) {
       toast.error("Task name is required");
       return;
     }
 
+    const item = items.find((i) => i.tempId === itemTempId);
+    if (!item) {
+      toast.error("Item not found");
+      return;
+    }
+
+    // If this is an existing item (has id), save directly to DB
+    if (item.id && existingSource) {
+      try {
+        setLoading(true);
+        
+        // Get entity IDs from the existing source
+        const sourceEntityIds = existingSource.entities.map((e) => e.entity.id);
+        
+        // Create task for each entity
+        const taskPromises = sourceEntityIds.map(async (entityId) => {
+          const taskData = {
+            name: newTaskForm.taskName,
+            description: newTaskForm.taskDescription || undefined,
+            expectedOutcome: newTaskForm.expectedOutcome || undefined,
+            assigneeId: newTaskForm.assigneeId || undefined,
+            picId: newTaskForm.picId || undefined,
+            reviewerId: newTaskForm.reviewerId || undefined,
+            frequency: newTaskForm.frequency,
+            quarter: newTaskForm.quarter || undefined,
+            riskRating: newTaskForm.riskRating,
+            startDate: newTaskForm.startDate || undefined,
+            dueDate: newTaskForm.dueDate || undefined,
+            evidenceRequired: newTaskForm.evidenceRequired,
+            narrativeRequired: false,
+            reviewRequired: newTaskForm.reviewRequired,
+            clickupUrl: newTaskForm.clickupUrl || undefined,
+            gdriveUrl: newTaskForm.gdriveUrl || undefined,
+            sourceId: existingSource.id,
+            sourceItemId: item.id,
+            entityId,
+          };
+
+          const res = await fetch("/api/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(taskData),
+          });
+
+          if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Failed to create task");
+          }
+
+          return await res.json();
+        });
+
+        await Promise.all(taskPromises);
+        
+        toast.success(`Task added to ${item.reference}`);
+        
+        // Refresh the items list
+        await fetchExistingItems(existingSource.id);
+        
+        // Reset form
+        setAddingTaskToItemId(null);
+        setNewTaskForm({
+          taskName: "",
+          taskDescription: "",
+          expectedOutcome: "",
+          assigneeId: "",
+          picId: "",
+          reviewerId: "",
+          frequency: defaultFrequency,
+          quarter: "",
+          riskRating: "MEDIUM",
+          startDate: "",
+          dueDate: "",
+          evidenceRequired: selectedTeam?.evidenceRequired || false,
+          reviewRequired: selectedTeam?.approvalRequired || true,
+          clickupUrl: "",
+          gdriveUrl: "",
+        });
+      } catch (error) {
+        console.error("Failed to add task:", error);
+        toast.error(error instanceof Error ? error.message : "Failed to add task");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Otherwise, add to local state for new items
     const taskTempId = `task-${Date.now()}-${Math.random()}`;
 
     const newTask: TaskDefinition = {
@@ -579,6 +1062,64 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     toast.success("Task added");
   };
 
+  // Bulk action handlers for Step 3
+  const handleBulkAssign = (userId: string) => {
+    setItems((prev) =>
+      prev.map((item) => ({
+        ...item,
+        tasks: item.tasks.map((task) =>
+          selectedTaskIds.has(task.tempId) ? { ...task, assigneeId: userId } : task
+        ),
+      }))
+    );
+    setBulkAssignOpen(false);
+    toast.success(`Assigned ${selectedTaskIds.size} task${selectedTaskIds.size !== 1 ? "s" : ""}`);
+  };
+
+  const handleBulkSetPIC = (userId: string) => {
+    setItems((prev) =>
+      prev.map((item) => ({
+        ...item,
+        tasks: item.tasks.map((task) =>
+          selectedTaskIds.has(task.tempId) ? { ...task, picId: userId } : task
+        ),
+      }))
+    );
+    setBulkPICOpen(false);
+    toast.success(`Set PIC for ${selectedTaskIds.size} task${selectedTaskIds.size !== 1 ? "s" : ""}`);
+  };
+
+  const handleBulkSetDueDate = () => {
+    if (!bulkDueDateValue) {
+      toast.error("Please select a date");
+      return;
+    }
+    setItems((prev) =>
+      prev.map((item) => ({
+        ...item,
+        tasks: item.tasks.map((task) =>
+          selectedTaskIds.has(task.tempId) ? { ...task, dueDate: bulkDueDateValue } : task
+        ),
+      }))
+    );
+    setBulkDueDateOpen(false);
+    setBulkDueDateValue("");
+    toast.success(`Set due date for ${selectedTaskIds.size} task${selectedTaskIds.size !== 1 ? "s" : ""}`);
+  };
+
+  const handleBulkSetQuarter = (quarter: string) => {
+    setItems((prev) =>
+      prev.map((item) => ({
+        ...item,
+        tasks: item.tasks.map((task) =>
+          selectedTaskIds.has(task.tempId) ? { ...task, quarter } : task
+        ),
+      }))
+    );
+    setBulkQuarterOpen(false);
+    toast.success(`Set quarter for ${selectedTaskIds.size} task${selectedTaskIds.size !== 1 ? "s" : ""}`);
+  };
+
   const handleStep2Next = () => {
     if (items.length === 0) {
       toast.error("Please add at least one item");
@@ -604,8 +1145,109 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
   };
 
   const handleGenerate = async () => {
-    // TODO: Implement generation logic
-    toast.success("Source generation coming soon!");
+    // Validation: check for blocking issues
+    const itemsWithoutReferences = items.filter((item) => !item.reference);
+    const tasksWithoutNames = items.flatMap((item) => item.tasks.filter((task) => !task.name));
+
+    if (itemsWithoutReferences.length > 0) {
+      toast.error(`${itemsWithoutReferences.length} item(s) without a reference. Please fix before generating.`);
+      return;
+    }
+
+    if (tasksWithoutNames.length > 0) {
+      toast.error(`${tasksWithoutNames.length} task(s) without a name. Please fix before generating.`);
+      return;
+    }
+
+    if (items.length === 0) {
+      toast.error("Please add at least one item before generating");
+      return;
+    }
+
+    const totalTasks = items.reduce((sum, item) => sum + item.tasks.length, 0);
+    if (totalTasks === 0) {
+      toast.error("Please add at least one task before generating");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Transform wizard data to API format
+      // For each item, create tasks for ALL selected entities
+      const apiPayload = {
+        items: items
+          .filter((item) => !item.isInformational) // Skip informational items
+          .map((item) => ({
+            item: {
+              reference: item.reference,
+              title: item.title,
+              description: item.description || "",
+              parentId: null,
+              sortOrder: 0,
+            },
+            // For each task definition, create one task per entity
+            tasks: item.tasks.flatMap((task) =>
+              selectedEntityIds.map((entityId) => ({
+                name: task.name,
+                description: task.description || "",
+                expectedOutcome: task.expectedOutcome || "",
+                entityId, // One task per entity
+                frequency: task.frequency,
+                quarter: task.quarter || "",
+                riskRating: task.riskRating,
+                assigneeId: task.assigneeId || "",
+                picId: task.picId || "",
+                reviewerId: task.reviewerId || "",
+                startDate: task.startDate || "",
+                dueDate: task.dueDate || "",
+                testingPeriodStart: "",
+                testingPeriodEnd: "",
+                evidenceRequired: task.evidenceRequired,
+                narrativeRequired: selectedTeam?.narrativeRequired || false,
+                reviewRequired: task.reviewRequired,
+                clickupUrl: task.clickupUrl || "",
+                gdriveUrl: task.gdriveUrl || "",
+              }))
+            ),
+          })),
+      };
+
+      const sourceId = existingSource?.id || createdSourceId;
+      if (!sourceId) {
+        toast.error("Source ID not found");
+        return;
+      }
+
+      const res = await fetch(`/api/sources/${sourceId}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(apiPayload),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to generate tasks");
+      }
+
+      const result = await res.json();
+      
+      toast.success(
+        `✓ Successfully generated ${result.tasksCreated} task${result.tasksCreated !== 1 ? "s" : ""} across ${result.itemsCreated} item${result.itemsCreated !== 1 ? "s" : ""}!`
+      );
+
+      if (result.warnings && result.warnings.length > 0) {
+        result.warnings.forEach((warning: string) => toast(warning, { icon: "⚠️" }));
+      }
+
+      // Close wizard and refresh sources list
+      onClose();
+    } catch (error) {
+      console.error("Generation error:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to generate tasks");
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -1036,8 +1678,1058 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           {/* Step 2: Items & Tasks */}
           {step === 2 && (
             <div className="space-y-6">
-              {/* Existing Items List */}
-              {items.length > 0 && (
+              {/* Method Selector - Always visible */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Choose how to add clauses and tasks
+                </h3>
+
+                {/* Two prominent cards */}
+                <div className="grid grid-cols-2 gap-4">
+                  {/* AI Extract Card */}
+                  <button
+                    onClick={() => setInputMethod("ai-extract")}
+                    className={`rounded-[14px] border-2 p-6 text-left transition-all ${
+                      inputMethod === "ai-extract"
+                        ? "border-[var(--blue)] bg-[var(--blue-light)]"
+                        : "border-[var(--border)] hover:border-[var(--blue-mid)]"
+                    }`}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div
+                        className="flex h-12 w-12 items-center justify-center rounded-lg"
+                        style={{
+                          backgroundColor:
+                            inputMethod === "ai-extract" ? "var(--blue)" : "var(--bg-subtle)",
+                          color: inputMethod === "ai-extract" ? "white" : "var(--text-secondary)",
+                        }}
+                      >
+                        <FileText size={24} />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="mb-2 text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                          AI Extract from Document
+                        </h4>
+                        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                          Upload the regulation PDF and AI will extract clauses and suggest monitoring tasks
+                          automatically. Best for new regulations.
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Spreadsheet Card */}
+                  <button
+                    onClick={() => setInputMethod("spreadsheet")}
+                    className={`rounded-[14px] border-2 p-6 text-left transition-all ${
+                      inputMethod === "spreadsheet"
+                        ? "border-[var(--blue)] bg-[var(--blue-light)]"
+                        : "border-[var(--border)] hover:border-[var(--blue-mid)]"
+                    }`}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div
+                        className="flex h-12 w-12 items-center justify-center rounded-lg"
+                        style={{
+                          backgroundColor:
+                            inputMethod === "spreadsheet" ? "var(--blue)" : "var(--bg-subtle)",
+                          color: inputMethod === "spreadsheet" ? "white" : "var(--text-secondary)",
+                        }}
+                      >
+                        <Table size={24} />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="mb-2 text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                          Spreadsheet View
+                        </h4>
+                        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                          Add clauses and tasks in a fast table format. Paste from Excel or type directly. Best
+                          for 5+ items.
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Fallback link */}
+                <div className="text-center">
+                  <button
+                    onClick={() => setInputMethod("one-by-one")}
+                    className="text-sm font-medium transition-colors hover:underline"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    or add items one by one →
+                  </button>
+                </div>
+              </div>
+
+              {/* AI Extract Method */}
+              {inputMethod === "ai-extract" && (
+                <div className="space-y-6">
+                  {extractedClauses.length === 0 ? (
+                    <>
+                      {/* Upload Section */}
+                      <div>
+                        <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                          Upload Document
+                        </label>
+                        {!uploadedFile ? (
+                          <div
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                            className={`flex flex-col items-center justify-center rounded-[14px] border-2 border-dashed p-8 transition-colors ${
+                              isDragging
+                                ? "border-[var(--blue)] bg-[var(--blue-light)]"
+                                : "border-[var(--border)] hover:border-[var(--blue-mid)]"
+                            }`}
+                          >
+                            <Upload size={48} style={{ color: "var(--text-muted)" }} />
+                            <p className="mt-4 text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                              Drop your PDF, DOCX, or TXT file here
+                            </p>
+                            <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                              or click to browse (max 50MB)
+                            </p>
+                            <input
+                              type="file"
+                              accept=".pdf,.docx,.doc,.txt"
+                              onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
+                              className="mt-4"
+                            />
+                          </div>
+                        ) : (
+                          <div
+                            className="flex items-center justify-between rounded-lg border p-4"
+                            style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}
+                          >
+                            <div className="flex items-center gap-3">
+                              <FileText size={24} style={{ color: "var(--blue)" }} />
+                              <div>
+                                <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                  {uploadedFile.name}
+                                </p>
+                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                                  {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => setUploadedFile(null)}
+                              className="rounded-lg p-2 transition-colors hover:bg-[var(--red-light)]"
+                              style={{ color: "var(--red)" }}
+                            >
+                              <X size={20} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* AI Configuration */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                            Extract Level
+                          </label>
+                          <select
+                            value={extractionLevel}
+                            onChange={(e) => setExtractionLevel(e.target.value)}
+                            className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                          >
+                            <option value="articles-sub">Articles & Sub-articles</option>
+                            <option value="articles-only">Top-level Articles only</option>
+                            <option value="sections">Sections & Clauses</option>
+                            <option value="all-paragraphs">All numbered paragraphs</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                            Task Suggestion
+                          </label>
+                          <select
+                            value={taskSuggestion}
+                            onChange={(e) => setTaskSuggestion(e.target.value)}
+                            className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                          >
+                            <option value="full">Suggest tasks with frequency & risk</option>
+                            <option value="tasks-only">Suggest tasks only</option>
+                            <option value="clauses-only">Extract clauses only</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                          Additional Instructions (optional)
+                        </label>
+                        <textarea
+                          value={additionalInstructions}
+                          onChange={(e) => setAdditionalInstructions(e.target.value)}
+                          rows={3}
+                          placeholder="e.g., Focus on customer due diligence requirements. Skip administrative clauses."
+                          className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                        />
+                      </div>
+
+                      <button
+                        onClick={handleAIExtract}
+                        disabled={!uploadedFile || isExtracting}
+                        className="flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-medium text-white transition-opacity disabled:opacity-40"
+                        style={{ backgroundColor: "var(--blue)" }}
+                      >
+                        {isExtracting ? (
+                          <>
+                            <Loader size={16} className="animate-spin" />
+                            {extractionProgress || "Extracting..."}
+                          </>
+                        ) : (
+                          <>
+                            Extract with AI
+                          </>
+                        )}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Extraction Results */}
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                          AI extracted {extractedClauses.length} clauses with{" "}
+                          {extractedClauses.reduce((sum, c) => sum + c.tasks.length, 0)} suggested tasks
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              const allSelected = extractedClauses.every((c) => c.included);
+                              setExtractedClauses((prev) =>
+                                prev.map((c) => ({ ...c, included: !allSelected, tasks: c.tasks.map(t => ({ ...t, included: !allSelected })) }))
+                              );
+                            }}
+                            className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors"
+                            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                          >
+                            {extractedClauses.every((c) => c.included) ? "Deselect All" : "Select All"}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setExtractedClauses([]);
+                              setUploadedFile(null);
+                            }}
+                            className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors"
+                            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                          >
+                            Re-extract
+                          </button>
+                          <button
+                            onClick={handleApplyExtractedClauses}
+                            className="rounded-lg px-3 py-1.5 text-sm font-medium text-white"
+                            style={{ backgroundColor: "var(--blue)" }}
+                          >
+                            Apply Selected
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Extracted Clauses List */}
+                      <div className="space-y-3">
+                        {extractedClauses.map((clause, idx) => (
+                          <div
+                            key={idx}
+                            className={`rounded-[14px] border p-4 transition-all ${
+                              clause.included ? "bg-white" : "border-dashed opacity-50"
+                            }`}
+                            style={{ borderColor: "var(--border)" }}
+                          >
+                            <div className="flex items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={clause.included}
+                                onChange={(e) =>
+                                  setExtractedClauses((prev) =>
+                                    prev.map((c, i) =>
+                                      i === idx ? { ...c, included: e.target.checked } : c
+                                    )
+                                  )
+                                }
+                                className="mt-1 rounded"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="rounded px-2 py-0.5 font-mono text-xs font-medium"
+                                    style={{ backgroundColor: "var(--purple-light)", color: "var(--purple)" }}
+                                  >
+                                    {clause.reference}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={clause.title}
+                                    onChange={(e) =>
+                                      setExtractedClauses((prev) =>
+                                        prev.map((c, i) => (i === idx ? { ...c, title: e.target.value } : c))
+                                      )
+                                    }
+                                    className="flex-1 border-b border-transparent text-sm font-medium outline-none hover:border-[var(--border)] focus:border-[var(--blue)]"
+                                    style={{ color: "var(--text-primary)" }}
+                                  />
+                                  <span
+                                    className="rounded-full px-2 py-0.5 text-xs font-medium"
+                                    style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
+                                  >
+                                    {clause.tasks.filter(t => t.included).length} tasks
+                                  </span>
+                                </div>
+                                
+                                {clause.expanded && (
+                                  <div className="mt-3 space-y-2">
+                                    <textarea
+                                      value={clause.description}
+                                      onChange={(e) =>
+                                        setExtractedClauses((prev) =>
+                                          prev.map((c, i) =>
+                                            i === idx ? { ...c, description: e.target.value } : c
+                                          )
+                                        )
+                                      }
+                                      rows={3}
+                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-[var(--blue)]"
+                                      style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                                    />
+                                    
+                                    {clause.tasks.map((task, taskIdx) => (
+                                      <div
+                                        key={task.id}
+                                        className="flex items-center gap-3 rounded-lg border p-3"
+                                        style={{ borderColor: "var(--border-light)", backgroundColor: "var(--bg-subtle)" }}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={task.included}
+                                          onChange={(e) =>
+                                            setExtractedClauses((prev) =>
+                                              prev.map((c, i) =>
+                                                i === idx
+                                                  ? {
+                                                      ...c,
+                                                      tasks: c.tasks.map((t, ti) =>
+                                                        ti === taskIdx ? { ...t, included: e.target.checked } : t
+                                                      ),
+                                                    }
+                                                  : c
+                                              )
+                                            )
+                                          }
+                                          className="rounded"
+                                        />
+                                        <input
+                                          type="text"
+                                          value={task.name}
+                                          onChange={(e) =>
+                                            setExtractedClauses((prev) =>
+                                              prev.map((c, i) =>
+                                                i === idx
+                                                  ? {
+                                                      ...c,
+                                                      tasks: c.tasks.map((t, ti) =>
+                                                        ti === taskIdx ? { ...t, name: e.target.value } : t
+                                                      ),
+                                                    }
+                                                  : c
+                                              )
+                                            )
+                                          }
+                                          className="flex-1 border-b border-transparent text-sm outline-none hover:border-[var(--border)] focus:border-[var(--blue)]"
+                                          style={{ color: "var(--text-primary)", backgroundColor: "transparent" }}
+                                        />
+                                        <select
+                                          value={task.frequency}
+                                          onChange={(e) =>
+                                            setExtractedClauses((prev) =>
+                                              prev.map((c, i) =>
+                                                i === idx
+                                                  ? {
+                                                      ...c,
+                                                      tasks: c.tasks.map((t, ti) =>
+                                                        ti === taskIdx ? { ...t, frequency: e.target.value } : t
+                                                      ),
+                                                    }
+                                                  : c
+                                              )
+                                            )
+                                          }
+                                          className="rounded border px-2 py-1 text-xs"
+                                          style={{ borderColor: "var(--border)" }}
+                                        >
+                                          {FREQUENCIES.map((f) => (
+                                            <option key={f} value={f}>
+                                              {f.replace(/_/g, " ")}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <select
+                                          value={task.riskRating}
+                                          onChange={(e) =>
+                                            setExtractedClauses((prev) =>
+                                              prev.map((c, i) =>
+                                                i === idx
+                                                  ? {
+                                                      ...c,
+                                                      tasks: c.tasks.map((t, ti) =>
+                                                        ti === taskIdx ? { ...t, riskRating: e.target.value } : t
+                                                      ),
+                                                    }
+                                                  : c
+                                              )
+                                            )
+                                          }
+                                          className="rounded border px-2 py-1 text-xs"
+                                          style={{ borderColor: "var(--border)" }}
+                                        >
+                                          {RISK_RATINGS.map((r) => (
+                                            <option key={r} value={r}>
+                                              {r}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <button
+                                          onClick={() =>
+                                            setExtractedClauses((prev) =>
+                                              prev.map((c, i) =>
+                                                i === idx
+                                                  ? { ...c, tasks: c.tasks.filter((_, ti) => ti !== taskIdx) }
+                                                  : c
+                                              )
+                                            )
+                                          }
+                                          className="rounded p-1 transition-colors hover:bg-[var(--red-light)]"
+                                          style={{ color: "var(--red)" }}
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                
+                                <button
+                                  onClick={() =>
+                                    setExtractedClauses((prev) =>
+                                      prev.map((c, i) => (i === idx ? { ...c, expanded: !c.expanded } : c))
+                                    )
+                                  }
+                                  className="mt-2 flex items-center gap-1 text-xs font-medium transition-colors"
+                                  style={{ color: "var(--blue)" }}
+                                >
+                                  <ChevronDown
+                                    size={14}
+                                    style={{
+                                      transform: clause.expanded ? "rotate(180deg)" : "rotate(0deg)",
+                                      transition: "transform 0.2s",
+                                    }}
+                                  />
+                                  {clause.expanded ? "Collapse" : "Expand"}
+                                </button>
+                              </div>
+                              
+                              <button
+                                onClick={() =>
+                                  setExtractedClauses((prev) => prev.filter((_, i) => i !== idx))
+                                }
+                                className="rounded-lg p-1 transition-colors hover:bg-[var(--red-light)]"
+                                style={{ color: "var(--red)" }}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Spreadsheet Method */}
+              {inputMethod === "spreadsheet" && (
+                <div className="space-y-6">
+                  {/* Paste from Excel Section */}
+                  <div className="rounded-[14px] border p-6" style={{ borderColor: "var(--border)", backgroundColor: "white" }}>
+                    <h4 className="mb-4 text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                      Paste from Excel
+                    </h4>
+                    <p className="mb-3 flex items-start gap-2 text-xs" style={{ color: "var(--text-muted)" }}>
+                      <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                      <span>
+                        Copy rows from Excel and paste here. Expected columns: Reference | Title | Description | Task Name | Frequency | Risk Rating
+                      </span>
+                    </p>
+                    <p className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>
+                      Paste tab-separated data from Excel. Each row becomes a clause. If Task Name column exists, tasks are created automatically.
+                    </p>
+                    <textarea
+                      value={pastedData}
+                      onChange={(e) => setPastedData(e.target.value)}
+                      rows={5}
+                      placeholder="Paste tab-separated data from Excel here..."
+                      className="w-full rounded-lg border px-3 py-2 font-mono text-sm outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "var(--bg-subtle)" }}
+                    />
+                    <button
+                      onClick={handleParsePastedData}
+                      disabled={!pastedData.trim()}
+                      className="mt-3 h-10 rounded-lg px-4 text-sm font-medium text-white transition-opacity disabled:opacity-40"
+                      style={{ backgroundColor: "var(--blue)" }}
+                    >
+                      Parse Pasted Data
+                    </button>
+                  </div>
+
+                  {/* Spreadsheet Table - Always Visible */}
+                  <>
+                    {/* Toolbar */}
+                    <div className="flex items-center justify-between rounded-lg border px-4 py-3" style={{ borderColor: "var(--border)", backgroundColor: "white" }}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                          Items & Tasks
+                        </span>
+                        <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+                          · {new Set(spreadsheetData.filter(r => r.reference).map((r) => r.reference)).size} clauses, {spreadsheetData.filter(r => r.taskName).length} tasks
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => {
+                            const newRow: SpreadsheetRow = {
+                              id: `row-${Date.now()}`,
+                              reference: "",
+                              clauseTitle: "",
+                              taskName: "",
+                              frequency: defaultFrequency,
+                              riskRating: "MEDIUM",
+                              assigneeId: "",
+                              picId: "",
+                              dueDate: "",
+                              isClauseRow: true,
+                            };
+                            setSpreadsheetData([...spreadsheetData, newRow]);
+                          }}
+                          className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
+                          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                        >
+                          <Plus size={14} />
+                          Add Clause Row
+                        </button>
+                        <button
+                          onClick={() => {
+                            const newRow: SpreadsheetRow = {
+                              id: `row-${Date.now()}`,
+                              reference: "",
+                              clauseTitle: "",
+                              taskName: "",
+                              frequency: defaultFrequency,
+                              riskRating: "MEDIUM",
+                              assigneeId: "",
+                              picId: "",
+                              dueDate: "",
+                              isClauseRow: false,
+                            };
+                            setSpreadsheetData([...spreadsheetData, newRow]);
+                          }}
+                          className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
+                          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                        >
+                          <Plus size={14} />
+                          Add Task Row
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                            Group by clause
+                          </span>
+                          <button
+                            onClick={() => setGroupByClause(!groupByClause)}
+                            className={`relative h-5 w-9 rounded-full transition-colors ${
+                              groupByClause ? "bg-[var(--blue)]" : "bg-[var(--border)]"
+                            }`}
+                          >
+                            <span
+                              className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                                groupByClause ? "translate-x-4" : "translate-x-0.5"
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                      {/* Table */}
+                      <div className="overflow-x-auto rounded-[14px] border" style={{ borderColor: "var(--border)", backgroundColor: "white" }}>
+                        <style>{`
+                          .spreadsheet-cell {
+                            border: none;
+                            background: transparent;
+                            outline: none;
+                            width: 100%;
+                            padding: 8px 12px;
+                            font-size: 13px;
+                            transition: background-color 0.15s;
+                          }
+                          .spreadsheet-cell:hover {
+                            background-color: var(--bg-subtle);
+                          }
+                          .spreadsheet-cell:focus {
+                            background-color: white;
+                            border: 1px solid var(--blue);
+                            box-shadow: 0 0 0 2px var(--blue-light);
+                            border-radius: 4px;
+                          }
+                          .spreadsheet-row:hover {
+                            background-color: var(--bg-hover);
+                          }
+                          .spreadsheet-row:hover .delete-button {
+                            opacity: 1;
+                          }
+                          .delete-button {
+                            opacity: 0;
+                            transition: opacity 0.15s;
+                          }
+                        `}</style>
+                        <table className="w-full border-collapse">
+                          <thead>
+                            <tr style={{ borderBottom: "1px solid var(--border)", backgroundColor: "var(--bg-subtle)" }}>
+                              <th style={{ width: "30px", padding: "10px 8px", textAlign: "center" }}>
+                                <input type="checkbox" className="rounded" />
+                              </th>
+                              <th style={{ minWidth: "100px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                Reference
+                              </th>
+                              <th style={{ minWidth: "200px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                Clause Title
+                              </th>
+                              <th style={{ minWidth: "240px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                Task Name
+                              </th>
+                              <th style={{ minWidth: "100px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                Frequency
+                              </th>
+                              <th style={{ minWidth: "80px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                Risk
+                              </th>
+                              <th style={{ minWidth: "120px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                Responsible
+                              </th>
+                              <th style={{ minWidth: "120px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                PIC
+                              </th>
+                              <th style={{ minWidth: "110px", padding: "10px 12px", textAlign: "left", fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                Due Date
+                              </th>
+                              <th style={{ width: "40px", padding: "10px 8px" }}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(() => {
+                              if (!groupByClause) {
+                                return spreadsheetData.map((row) => (
+                                  <tr key={row.id} className="spreadsheet-row" style={{ borderBottom: "1px solid var(--border-light)" }}>
+                                    <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedRows.has(row.id)}
+                                        onChange={(e) => {
+                                          const newSet = new Set(selectedRows);
+                                          if (e.target.checked) {
+                                            newSet.add(row.id);
+                                          } else {
+                                            newSet.delete(row.id);
+                                          }
+                                          setSelectedRows(newSet);
+                                        }}
+                                        className="rounded"
+                                      />
+                                    </td>
+                                    <td style={{ padding: 0 }}>
+                                      <input
+                                        type="text"
+                                        value={row.reference}
+                                        disabled={!row.isClauseRow}
+                                        onChange={(e) =>
+                                          setSpreadsheetData((prev) =>
+                                            prev.map((r) => (r.id === row.id ? { ...r, reference: e.target.value } : r))
+                                          )
+                                        }
+                                        className="spreadsheet-cell font-mono font-bold disabled:opacity-30"
+                                        style={{ color: "var(--purple)" }}
+                                      />
+                                    </td>
+                                    <td style={{ padding: 0 }}>
+                                      <input
+                                        type="text"
+                                        value={row.clauseTitle}
+                                        disabled={!row.isClauseRow}
+                                        onChange={(e) =>
+                                          setSpreadsheetData((prev) =>
+                                            prev.map((r) => (r.id === row.id ? { ...r, clauseTitle: e.target.value } : r))
+                                          )
+                                        }
+                                        className="spreadsheet-cell disabled:opacity-30"
+                                        style={{ fontWeight: 500, color: "var(--text-primary)" }}
+                                      />
+                                    </td>
+                                    <td style={{ padding: 0 }}>
+                                      <input
+                                        type="text"
+                                        value={row.taskName}
+                                        onChange={(e) =>
+                                          setSpreadsheetData((prev) =>
+                                            prev.map((r) => (r.id === row.id ? { ...r, taskName: e.target.value } : r))
+                                          )
+                                        }
+                                        className="spreadsheet-cell"
+                                        style={{ color: "var(--text-primary)" }}
+                                      />
+                                    </td>
+                                    <td style={{ padding: "4px" }}>
+                                      <select
+                                        value={row.frequency}
+                                        onChange={(e) =>
+                                          setSpreadsheetData((prev) =>
+                                            prev.map((r) => (r.id === row.id ? { ...r, frequency: e.target.value } : r))
+                                          )
+                                        }
+                                        className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                      >
+                                        {FREQUENCIES.map((f) => (
+                                          <option key={f} value={f}>
+                                            {f.replace(/_/g, " ")}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td style={{ padding: "4px" }}>
+                                      <select
+                                        value={row.riskRating}
+                                        onChange={(e) =>
+                                          setSpreadsheetData((prev) =>
+                                            prev.map((r) => (r.id === row.id ? { ...r, riskRating: e.target.value } : r))
+                                          )
+                                        }
+                                        className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                      >
+                                        {RISK_RATINGS.map((rating) => (
+                                          <option key={rating} value={rating}>
+                                            {rating}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td style={{ padding: "4px" }}>
+                                      <select
+                                        value={row.assigneeId}
+                                        onChange={(e) =>
+                                          setSpreadsheetData((prev) =>
+                                            prev.map((r) => (r.id === row.id ? { ...r, assigneeId: e.target.value } : r))
+                                          )
+                                        }
+                                        className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                      >
+                                        <option value="">None</option>
+                                        {users.map((user) => (
+                                          <option key={user.id} value={user.id}>
+                                            {user.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td style={{ padding: "4px" }}>
+                                      <select
+                                        value={row.picId}
+                                        onChange={(e) =>
+                                          setSpreadsheetData((prev) =>
+                                            prev.map((r) => (r.id === row.id ? { ...r, picId: e.target.value } : r))
+                                          )
+                                        }
+                                        className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                      >
+                                        <option value="">None</option>
+                                        {users.map((user) => (
+                                          <option key={user.id} value={user.id}>
+                                            {user.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td style={{ padding: "4px" }}>
+                                      <input
+                                        type="date"
+                                        value={row.dueDate}
+                                        onChange={(e) =>
+                                          setSpreadsheetData((prev) =>
+                                            prev.map((r) => (r.id === row.id ? { ...r, dueDate: e.target.value } : r))
+                                          )
+                                        }
+                                        className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                      />
+                                    </td>
+                                    <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                                      <button
+                                        onClick={() =>
+                                          setSpreadsheetData((prev) => prev.filter((r) => r.id !== row.id))
+                                        }
+                                        className="delete-button rounded p-1 transition-colors hover:bg-[var(--red-light)]"
+                                        style={{ color: "var(--red)" }}
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ));
+                              }
+
+                              // Grouped by clause
+                              const clauseGroups = new Map<string, SpreadsheetRow[]>();
+                              spreadsheetData.forEach((row) => {
+                                const key = row.reference || `empty-${row.id}`;
+                                if (!clauseGroups.has(key)) {
+                                  clauseGroups.set(key, []);
+                                }
+                                clauseGroups.get(key)!.push(row);
+                              });
+
+                              return Array.from(clauseGroups.entries()).map(([reference, rows]) => (
+                                <>
+                                  {/* Clause Header Row */}
+                                  {reference && reference !== `empty-${rows[0]?.id}` && (
+                                    <tr key={`header-${reference}`} style={{ backgroundColor: "var(--blue-light)", borderBottom: "1px solid var(--blue-mid)" }}>
+                                      <td colSpan={10} style={{ padding: "8px 12px" }}>
+                                        <span className="font-semibold" style={{ color: "var(--blue)", fontSize: "13px" }}>
+                                          {reference} — {rows[0]?.clauseTitle} ({rows.filter(r => r.taskName).length} task{rows.filter(r => r.taskName).length !== 1 ? "s" : ""})
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  )}
+                                  {/* Task Rows */}
+                                  {rows.map((row, idx) => (
+                                    <tr key={row.id} className="spreadsheet-row" style={{ borderBottom: "1px solid var(--border-light)" }}>
+                                      <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedRows.has(row.id)}
+                                          onChange={(e) => {
+                                            const newSet = new Set(selectedRows);
+                                            if (e.target.checked) {
+                                              newSet.add(row.id);
+                                            } else {
+                                              newSet.delete(row.id);
+                                            }
+                                            setSelectedRows(newSet);
+                                          }}
+                                          className="rounded"
+                                        />
+                                      </td>
+                                      <td style={{ padding: 0 }}>
+                                        {row.isClauseRow ? (
+                                          <input
+                                            type="text"
+                                            value={row.reference}
+                                            onChange={(e) =>
+                                              setSpreadsheetData((prev) =>
+                                                prev.map((r) => (r.reference === reference ? { ...r, reference: e.target.value } : r))
+                                              )
+                                            }
+                                            className="spreadsheet-cell font-mono font-bold"
+                                            style={{ color: "var(--purple)" }}
+                                          />
+                                        ) : (
+                                          <div style={{ padding: "8px 12px" }}></div>
+                                        )}
+                                      </td>
+                                      <td style={{ padding: 0 }}>
+                                        {row.isClauseRow ? (
+                                          <input
+                                            type="text"
+                                            value={row.clauseTitle}
+                                            onChange={(e) =>
+                                              setSpreadsheetData((prev) =>
+                                                prev.map((r) => (r.reference === reference ? { ...r, clauseTitle: e.target.value } : r))
+                                              )
+                                            }
+                                            className="spreadsheet-cell"
+                                            style={{ fontWeight: 500, color: "var(--text-primary)" }}
+                                          />
+                                        ) : (
+                                          <div style={{ padding: "8px 12px" }}></div>
+                                        )}
+                                      </td>
+                                      <td style={{ padding: 0 }}>
+                                        <input
+                                          type="text"
+                                          value={row.taskName}
+                                          onChange={(e) =>
+                                            setSpreadsheetData((prev) =>
+                                              prev.map((r) => (r.id === row.id ? { ...r, taskName: e.target.value } : r))
+                                            )
+                                          }
+                                          className="spreadsheet-cell"
+                                          style={{ color: "var(--text-primary)" }}
+                                        />
+                                      </td>
+                                      <td style={{ padding: "4px" }}>
+                                        <select
+                                          value={row.frequency}
+                                          onChange={(e) =>
+                                            setSpreadsheetData((prev) =>
+                                              prev.map((r) => (r.id === row.id ? { ...r, frequency: e.target.value } : r))
+                                            )
+                                          }
+                                          className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                        >
+                                          {FREQUENCIES.map((f) => (
+                                            <option key={f} value={f}>
+                                              {f.replace(/_/g, " ")}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </td>
+                                      <td style={{ padding: "4px" }}>
+                                        <select
+                                          value={row.riskRating}
+                                          onChange={(e) =>
+                                            setSpreadsheetData((prev) =>
+                                              prev.map((r) => (r.id === row.id ? { ...r, riskRating: e.target.value } : r))
+                                            )
+                                          }
+                                          className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                        >
+                                          {RISK_RATINGS.map((rating) => (
+                                            <option key={rating} value={rating}>
+                                              {rating}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </td>
+                                      <td style={{ padding: "4px" }}>
+                                        <select
+                                          value={row.assigneeId}
+                                          onChange={(e) =>
+                                            setSpreadsheetData((prev) =>
+                                              prev.map((r) => (r.id === row.id ? { ...r, assigneeId: e.target.value } : r))
+                                            )
+                                          }
+                                          className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                        >
+                                          <option value="">None</option>
+                                          {users.map((user) => (
+                                            <option key={user.id} value={user.id}>
+                                              {user.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </td>
+                                      <td style={{ padding: "4px" }}>
+                                        <select
+                                          value={row.picId}
+                                          onChange={(e) =>
+                                            setSpreadsheetData((prev) =>
+                                              prev.map((r) => (r.id === row.id ? { ...r, picId: e.target.value } : r))
+                                            )
+                                          }
+                                          className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                        >
+                                          <option value="">None</option>
+                                          {users.map((user) => (
+                                            <option key={user.id} value={user.id}>
+                                              {user.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </td>
+                                      <td style={{ padding: "4px" }}>
+                                        <input
+                                          type="date"
+                                          value={row.dueDate}
+                                          onChange={(e) =>
+                                            setSpreadsheetData((prev) =>
+                                              prev.map((r) => (r.id === row.id ? { ...r, dueDate: e.target.value } : r))
+                                            )
+                                          }
+                                          className="w-full rounded border px-2 py-1.5 text-xs outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                                        />
+                                      </td>
+                                      <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                                        <button
+                                          onClick={() =>
+                                            setSpreadsheetData((prev) => prev.filter((r) => r.id !== row.id))
+                                          }
+                                          className="delete-button rounded p-1 transition-colors hover:bg-[var(--red-light)]"
+                                          style={{ color: "var(--red)" }}
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </>
+                              ));
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Bottom Actions */}
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={() => {
+                            const newRow: SpreadsheetRow = {
+                              id: `row-${Date.now()}`,
+                              reference: "",
+                              clauseTitle: "",
+                              taskName: "",
+                              frequency: defaultFrequency,
+                              riskRating: "MEDIUM",
+                              assigneeId: "",
+                              picId: "",
+                              dueDate: "",
+                              isClauseRow: true,
+                            };
+                            setSpreadsheetData([...spreadsheetData, newRow]);
+                          }}
+                          className="flex items-center gap-2 text-sm font-medium transition-colors hover:underline"
+                          style={{ color: "var(--blue)" }}
+                        >
+                          <Plus size={16} />
+                          Add another clause with tasks
+                        </button>
+                        <button
+                          onClick={handleApplySpreadsheetData}
+                          className="h-10 rounded-lg px-6 text-sm font-medium text-white"
+                          style={{ backgroundColor: "var(--blue)" }}
+                        >
+                          Apply to Items
+                        </button>
+                      </div>
+                  </>
+                </div>
+              )}
+
+              {/* One-by-One Method (existing form) */}
+              {inputMethod === "one-by-one" && (
+                <div className="space-y-6">
+                  {/* Existing Items List */}
+                  {items.length > 0 && (
                 <div className="space-y-3">
                   {items.map((item) => (
                     <div
@@ -1119,7 +2811,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                   <span>
                                     {task.assigneeId
                                       ? users.find((u) => u.id === task.assigneeId)?.name || "Unknown"
-                                      : "Unassigned"}
+                                      : "Not assigned"}
                                   </span>
                                   <span>•</span>
                                   <span>{task.frequency.replace(/_/g, " ")}</span>
@@ -1194,11 +2886,11 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                   />
                                 </div>
 
-                                {/* Assignee, PIC, Reviewer Row */}
+                                {/* Department/Team Responsible, PIC, Reviewer Row */}
                                 <div className={selectedTeam?.approvalRequired ? "grid grid-cols-3 gap-4" : "grid grid-cols-2 gap-4"}>
                                   <div>
                                     <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                      Assignee
+                                      Department / Team Responsible
                                     </label>
                                     <select
                                       value={newTaskForm.assigneeId}
@@ -1206,7 +2898,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                       className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
                                       style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
                                     >
-                                      <option value="">Select assignee...</option>
+                                      <option value="">Select responsible...</option>
                                       {users.map((user) => (
                                         <option key={user.id} value={user.id}>
                                           {user.name}
@@ -1217,7 +2909,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
 
                                   <div>
                                     <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                      PIC
+                                      Person in Charge (PIC)
                                     </label>
                                     <select
                                       value={newTaskForm.picId}
@@ -1618,11 +3310,11 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                           />
                         </div>
 
-                        {/* Assignee, PIC, Reviewer Row */}
+                        {/* Department/Team Responsible, PIC, Reviewer Row */}
                         <div className="grid grid-cols-3 gap-4">
                           <div>
                             <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                              Assignee
+                              Department / Team Responsible
                             </label>
                             <select
                               value={newItemForm.assigneeId}
@@ -1630,7 +3322,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                               className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
                               style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
                             >
-                              <option value="">Select assignee...</option>
+                              <option value="">Select responsible...</option>
                               {users.map((user) => (
                                 <option key={user.id} value={user.id}>
                                   {user.name}
@@ -1641,7 +3333,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
 
                           <div>
                             <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                              PIC
+                              Person in Charge (PIC)
                             </label>
                             <select
                               value={newItemForm.picId}
@@ -1880,6 +3572,143 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                   </div>
                 </div>
               )}
+                </div>
+              )}
+
+              {/* Shared Items Display - shows items regardless of input method */}
+              {items.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                      Added Items ({items.length})
+                    </h4>
+                    {items.length > 0 && inputMethod !== "one-by-one" && (
+                      <button
+                        onClick={() => setInputMethod("one-by-one")}
+                        className="text-xs font-medium transition-colors hover:underline"
+                        style={{ color: "var(--blue)" }}
+                      >
+                        Switch to one-by-one editor
+                      </button>
+                    )}
+                  </div>
+                  
+                  {items.map((item) => (
+                    <div
+                      key={item.tempId}
+                      className="rounded-[14px] border bg-white p-4"
+                      style={{ borderColor: "var(--border)" }}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <span
+                              className="font-mono text-sm font-medium"
+                              style={{ color: "var(--text-primary)" }}
+                            >
+                              {item.reference}
+                            </span>
+                            <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                              {item.title}
+                            </span>
+                            {item.isInformational ? (
+                              <span
+                                className="rounded-full px-2 py-0.5 text-xs"
+                                style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-muted)" }}
+                              >
+                                Informational — no tasks
+                              </span>
+                            ) : (
+                              <span
+                                className="rounded-full px-2 py-0.5 text-xs font-medium"
+                                style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
+                              >
+                                {item.tasks.length} task{item.tasks.length !== 1 ? "s" : ""}
+                              </span>
+                            )}
+                          </div>
+                          {item.description && (
+                            <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+                              {item.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() =>
+                              setItems((prev) =>
+                                prev.map((i) =>
+                                  i.tempId === item.tempId ? { ...i, expanded: !i.expanded } : i
+                                )
+                              )
+                            }
+                            className="rounded-lg p-1 transition-colors hover:bg-[var(--bg-subtle)]"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            <ChevronDown
+                              size={20}
+                              style={{
+                                transform: item.expanded ? "rotate(180deg)" : "rotate(0deg)",
+                                transition: "transform 0.2s",
+                              }}
+                            />
+                          </button>
+                          <button
+                            onClick={() => setItems((prev) => prev.filter((i) => i.tempId !== item.tempId))}
+                            className="rounded-lg p-1 transition-colors hover:bg-[var(--red-light)]"
+                            style={{ color: "var(--red)" }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {item.expanded && !item.isInformational && (
+                        <div className="mt-4 space-y-2 border-t pt-4" style={{ borderColor: "var(--border-light)" }}>
+                          {item.tasks.map((task) => (
+                            <div
+                              key={task.tempId}
+                              className="flex items-start justify-between rounded-lg p-3"
+                              style={{ backgroundColor: "var(--bg-subtle)" }}
+                            >
+                              <div className="flex-1">
+                                <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                  {task.name}
+                                </p>
+                                <div className="mt-1 flex items-center gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
+                                  <span>
+                                    {task.assigneeId
+                                      ? users.find((u) => u.id === task.assigneeId)?.name || "Unknown"
+                                      : "Not assigned"}
+                                  </span>
+                                  <span>•</span>
+                                  <span>{task.frequency.replace(/_/g, " ")}</span>
+                                  {task.quarter && (
+                                    <>
+                                      <span>•</span>
+                                      <span>{task.quarter}</span>
+                                    </>
+                                  )}
+                                  <span>•</span>
+                                  <span>{task.riskRating}</span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteTask(item.tempId, task.tempId)}
+                                className="rounded-lg p-1 transition-colors hover:bg-[var(--red-light)]"
+                                style={{ color: "var(--red)" }}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1919,7 +3748,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                           Task Name
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-                          Assignee
+                          Responsible
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
                           PIC
@@ -1992,7 +3821,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                               >
                                 {task.assigneeId
                                   ? users.find((u) => u.id === task.assigneeId)?.name || "Unknown"
-                                  : "Unassigned"}
+                                  : "Not assigned"}
                               </span>
                             </td>
                             <td className="px-4 py-3">
@@ -2062,34 +3891,166 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                     {selectedTaskIds.size} task{selectedTaskIds.size !== 1 ? "s" : ""} selected
                   </span>
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => toast("Bulk assign coming soon")}
-                      className="h-9 rounded-lg border px-4 text-sm font-medium transition-colors"
-                      style={{ borderColor: "var(--border)", backgroundColor: "white", color: "var(--text-secondary)" }}
-                    >
-                      Assign to...
-                    </button>
-                    <button
-                      onClick={() => toast("Bulk set PIC coming soon")}
-                      className="h-9 rounded-lg border px-4 text-sm font-medium transition-colors"
-                      style={{ borderColor: "var(--border)", backgroundColor: "white", color: "var(--text-secondary)" }}
-                    >
-                      Set PIC...
-                    </button>
-                    <button
-                      onClick={() => toast("Bulk set due date coming soon")}
-                      className="h-9 rounded-lg border px-4 text-sm font-medium transition-colors"
-                      style={{ borderColor: "var(--border)", backgroundColor: "white", color: "var(--text-secondary)" }}
-                    >
-                      Set Due Date...
-                    </button>
-                    <button
-                      onClick={() => toast("Bulk set quarter coming soon")}
-                      className="h-9 rounded-lg border px-4 text-sm font-medium transition-colors"
-                      style={{ borderColor: "var(--border)", backgroundColor: "white", color: "var(--text-secondary)" }}
-                    >
-                      Set Quarter...
-                    </button>
+                    {/* Bulk Set Responsible */}
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          setBulkAssignOpen(!bulkAssignOpen);
+                          setBulkPICOpen(false);
+                          setBulkDueDateOpen(false);
+                          setBulkQuarterOpen(false);
+                        }}
+                        className="flex h-9 items-center gap-1.5 rounded-lg border px-4 text-sm font-medium transition-colors"
+                        style={{ borderColor: "var(--border)", backgroundColor: "white", color: "var(--text-secondary)" }}
+                      >
+                        Set Responsible...
+                        <ChevronDown size={14} />
+                      </button>
+                      {bulkAssignOpen && (
+                        <div
+                          className="absolute right-0 z-20 mt-1 w-64 rounded-lg border bg-white shadow-lg"
+                          style={{ borderColor: "var(--border)" }}
+                        >
+                          <div className="max-h-60 overflow-y-auto p-2">
+                            {users.map((user) => (
+                              <button
+                                key={user.id}
+                                onClick={() => handleBulkAssign(user.id)}
+                                className="w-full rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-subtle)]"
+                                style={{ color: "var(--text-primary)" }}
+                              >
+                                {user.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bulk Set PIC */}
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          setBulkPICOpen(!bulkPICOpen);
+                          setBulkAssignOpen(false);
+                          setBulkDueDateOpen(false);
+                          setBulkQuarterOpen(false);
+                        }}
+                        className="flex h-9 items-center gap-1.5 rounded-lg border px-4 text-sm font-medium transition-colors"
+                        style={{ borderColor: "var(--border)", backgroundColor: "white", color: "var(--text-secondary)" }}
+                      >
+                        Set PIC...
+                        <ChevronDown size={14} />
+                      </button>
+                      {bulkPICOpen && (
+                        <div
+                          className="absolute right-0 z-20 mt-1 w-64 rounded-lg border bg-white shadow-lg"
+                          style={{ borderColor: "var(--border)" }}
+                        >
+                          <div className="max-h-60 overflow-y-auto p-2">
+                            {users.map((user) => (
+                              <button
+                                key={user.id}
+                                onClick={() => handleBulkSetPIC(user.id)}
+                                className="w-full rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-subtle)]"
+                                style={{ color: "var(--text-primary)" }}
+                              >
+                                {user.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bulk Set Due Date */}
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          setBulkDueDateOpen(!bulkDueDateOpen);
+                          setBulkAssignOpen(false);
+                          setBulkPICOpen(false);
+                          setBulkQuarterOpen(false);
+                        }}
+                        className="flex h-9 items-center gap-1.5 rounded-lg border px-4 text-sm font-medium transition-colors"
+                        style={{ borderColor: "var(--border)", backgroundColor: "white", color: "var(--text-secondary)" }}
+                      >
+                        Set Due Date...
+                        <ChevronDown size={14} />
+                      </button>
+                      {bulkDueDateOpen && (
+                        <div
+                          className="absolute right-0 z-20 mt-1 w-72 rounded-lg border bg-white p-4 shadow-lg"
+                          style={{ borderColor: "var(--border)" }}
+                        >
+                          <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                            Select due date
+                          </label>
+                          <input
+                            type="date"
+                            value={bulkDueDateValue}
+                            onChange={(e) => setBulkDueDateValue(e.target.value)}
+                            className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                            style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                          />
+                          <div className="mt-3 flex justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setBulkDueDateOpen(false);
+                                setBulkDueDateValue("");
+                              }}
+                              className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors"
+                              style={{ borderColor: "var(--border)", color: "var(--text-secondary)", backgroundColor: "white" }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleBulkSetDueDate}
+                              className="rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-opacity"
+                              style={{ backgroundColor: "var(--blue)" }}
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bulk Set Quarter */}
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          setBulkQuarterOpen(!bulkQuarterOpen);
+                          setBulkAssignOpen(false);
+                          setBulkPICOpen(false);
+                          setBulkDueDateOpen(false);
+                        }}
+                        className="flex h-9 items-center gap-1.5 rounded-lg border px-4 text-sm font-medium transition-colors"
+                        style={{ borderColor: "var(--border)", backgroundColor: "white", color: "var(--text-secondary)" }}
+                      >
+                        Set Quarter...
+                        <ChevronDown size={14} />
+                      </button>
+                      {bulkQuarterOpen && (
+                        <div
+                          className="absolute right-0 z-20 mt-1 w-40 rounded-lg border bg-white shadow-lg"
+                          style={{ borderColor: "var(--border)" }}
+                        >
+                          <div className="p-2">
+                            {QUARTERS.map((q) => (
+                              <button
+                                key={q}
+                                onClick={() => handleBulkSetQuarter(q)}
+                                className="w-full rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-subtle)]"
+                                style={{ color: "var(--text-primary)" }}
+                              >
+                                {q}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
