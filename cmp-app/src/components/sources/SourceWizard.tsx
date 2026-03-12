@@ -52,7 +52,8 @@ type TaskDefinition = {
 };
 
 type ItemWithTasks = {
-  tempId: string;
+  id?: string; // For existing items from DB
+  tempId: string; // For new items
   reference: string;
   title: string;
   description: string;
@@ -270,6 +271,78 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       console.error("Failed to fetch issuing authorities:", error);
     }
   };
+
+  const fetchExistingItems = async (sourceId: string) => {
+    try {
+      const res = await fetch(`/api/sources/${sourceId}`);
+      if (res.ok) {
+        const source = await res.json();
+        if (source.items && source.items.length > 0) {
+          const loadedItems: ItemWithTasks[] = source.items.map((item: {
+            id: string;
+            reference: string;
+            title: string;
+            description: string | null;
+            isInformational: boolean;
+            tasks: Array<{
+              id: string;
+              name: string;
+              description: string | null;
+              expectedOutcome: string | null;
+              frequency: string;
+              quarter: string | null;
+              riskRating: string;
+              dueDate: string | null;
+              startDate: string | null;
+              evidenceRequired: boolean;
+              reviewRequired: boolean;
+              clickupUrl: string | null;
+              gdriveUrl: string | null;
+              assigneeId: string | null;
+              picId: string | null;
+              reviewerId: string | null;
+            }>;
+          }) => ({
+            id: item.id,
+            tempId: `existing-${item.id}`,
+            reference: item.reference,
+            title: item.title,
+            description: item.description || "",
+            isInformational: item.isInformational,
+            tasks: item.tasks.map((task) => ({
+              tempId: `existing-task-${task.id}`,
+              name: task.name,
+              description: task.description || "",
+              expectedOutcome: task.expectedOutcome || "",
+              assigneeId: task.assigneeId || "",
+              picId: task.picId || "",
+              reviewerId: task.reviewerId || "",
+              frequency: task.frequency,
+              quarter: task.quarter || "",
+              riskRating: task.riskRating,
+              startDate: task.startDate || "",
+              dueDate: task.dueDate || "",
+              evidenceRequired: task.evidenceRequired,
+              reviewRequired: task.reviewRequired,
+              clickupUrl: task.clickupUrl || "",
+              gdriveUrl: task.gdriveUrl || "",
+            })),
+            expanded: false,
+          }));
+          setItems(loadedItems);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch existing items:", error);
+    }
+  };
+
+  // Fetch existing items when modal opens with an existing source
+  useEffect(() => {
+    if (isOpen && existingSource?.id) {
+      fetchExistingItems(existingSource.id);
+    }
+  }, [isOpen, existingSource]);
 
   const validateSourceCode = async (code: string) => {
     if (!code || !teamId) return;
@@ -526,13 +599,101 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     toast.success("Task removed");
   };
 
-  const handleAddTaskToExistingItem = (itemTempId: string) => {
+  const handleAddTaskToExistingItem = async (itemTempId: string) => {
     // Validation
     if (!newTaskForm.taskName) {
       toast.error("Task name is required");
       return;
     }
 
+    const item = items.find((i) => i.tempId === itemTempId);
+    if (!item) {
+      toast.error("Item not found");
+      return;
+    }
+
+    // If this is an existing item (has id), save directly to DB
+    if (item.id && existingSource) {
+      try {
+        setLoading(true);
+        
+        // Get entity IDs from the existing source
+        const sourceEntityIds = existingSource.entities.map((e) => e.entity.id);
+        
+        // Create task for each entity
+        const taskPromises = sourceEntityIds.map(async (entityId) => {
+          const taskData = {
+            name: newTaskForm.taskName,
+            description: newTaskForm.taskDescription || undefined,
+            expectedOutcome: newTaskForm.expectedOutcome || undefined,
+            assigneeId: newTaskForm.assigneeId || undefined,
+            picId: newTaskForm.picId || undefined,
+            reviewerId: newTaskForm.reviewerId || undefined,
+            frequency: newTaskForm.frequency,
+            quarter: newTaskForm.quarter || undefined,
+            riskRating: newTaskForm.riskRating,
+            startDate: newTaskForm.startDate || undefined,
+            dueDate: newTaskForm.dueDate || undefined,
+            evidenceRequired: newTaskForm.evidenceRequired,
+            narrativeRequired: false,
+            reviewRequired: newTaskForm.reviewRequired,
+            clickupUrl: newTaskForm.clickupUrl || undefined,
+            gdriveUrl: newTaskForm.gdriveUrl || undefined,
+            sourceId: existingSource.id,
+            sourceItemId: item.id,
+            entityId,
+          };
+
+          const res = await fetch("/api/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(taskData),
+          });
+
+          if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Failed to create task");
+          }
+
+          return await res.json();
+        });
+
+        await Promise.all(taskPromises);
+        
+        toast.success(`Task added to ${item.reference}`);
+        
+        // Refresh the items list
+        await fetchExistingItems(existingSource.id);
+        
+        // Reset form
+        setAddingTaskToItemId(null);
+        setNewTaskForm({
+          taskName: "",
+          taskDescription: "",
+          expectedOutcome: "",
+          assigneeId: "",
+          picId: "",
+          reviewerId: "",
+          frequency: defaultFrequency,
+          quarter: "",
+          riskRating: "MEDIUM",
+          startDate: "",
+          dueDate: "",
+          evidenceRequired: selectedTeam?.evidenceRequired || false,
+          reviewRequired: selectedTeam?.approvalRequired || true,
+          clickupUrl: "",
+          gdriveUrl: "",
+        });
+      } catch (error) {
+        console.error("Failed to add task:", error);
+        toast.error(error instanceof Error ? error.message : "Failed to add task");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Otherwise, add to local state for new items
     const taskTempId = `task-${Date.now()}-${Math.random()}`;
 
     const newTask: TaskDefinition = {

@@ -47,6 +47,10 @@ export async function GET(req: NextRequest) {
       where.quarter = params.quarter;
     }
 
+    if (params.sourceId) {
+      where.sourceId = params.sourceId;
+    }
+
     if (params.search) {
       where.OR = [{ name: { contains: params.search, mode: "insensitive" } }, { description: { contains: params.search, mode: "insensitive" } }];
     }

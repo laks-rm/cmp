@@ -13,6 +13,7 @@ import {
   Clock,
   Send,
   Info,
+  Download,
 } from "lucide-react";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { EntityBadge } from "@/components/ui/EntityBadge";
@@ -30,6 +31,7 @@ type Evidence = {
   fileName: string;
   fileSize: number;
   fileUrl: string;
+  mimeType: string;
   uploadedBy: User;
   createdAt: string;
 };
@@ -208,6 +210,19 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
       console.error("Delete error:", error);
       toast.error("Failed to delete evidence");
     }
+  };
+
+  const handleDownloadEvidence = (evidenceId: string, fileName: string) => {
+    const link = document.createElement("a");
+    link.href = `/api/files/${evidenceId}`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleOpenEvidence = (evidenceId: string) => {
+    window.open(`/api/files/${evidenceId}`, "_blank");
   };
 
   const handleAddComment = async () => {
@@ -619,40 +634,85 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                   {/* Evidence list */}
                   {evidence.length > 0 ? (
                     <div className="space-y-2">
-                      {evidence.map((e) => (
-                        <div
-                          key={e.id}
-                          className="flex items-center justify-between rounded-lg border p-3"
-                          style={{ borderColor: "var(--border)", backgroundColor: "white" }}
-                        >
-                          <div className="flex items-center gap-3">
-                            <FileText size={20} style={{ color: "var(--blue)" }} />
-                            <div>
-                              <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                {e.fileName}
-                              </p>
-                              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                {(e.fileSize / 1024).toFixed(1)} KB · Uploaded by {e.uploadedBy?.name ?? "Unknown"} · {format(new Date(e.createdAt), "MMM d, h:mm a")}
-                              </p>
+                      {evidence.map((e) => {
+                        const isViewable = ["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp"].includes(e.mimeType);
+                        
+                        return (
+                          <div
+                            key={e.id}
+                            className="flex items-center justify-between rounded-lg border p-3"
+                            style={{ borderColor: "var(--border)", backgroundColor: "white" }}
+                          >
+                            <div className="flex items-center gap-3 flex-1">
+                              <FileText size={20} style={{ color: "var(--blue)" }} />
+                              <div className="flex-1">
+                                <button
+                                  onClick={() => handleOpenEvidence(e.id)}
+                                  className="text-sm font-medium hover:underline text-left"
+                                  style={{ color: "var(--blue)" }}
+                                >
+                                  {e.fileName}
+                                </button>
+                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                                  {(e.fileSize / 1024).toFixed(1)} KB · Uploaded by {e.uploadedBy?.name ?? "Unknown"} · {format(new Date(e.createdAt), "MMM d, h:mm a")}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isViewable && (
+                                <button
+                                  onClick={() => handleOpenEvidence(e.id)}
+                                  className="rounded-md p-1.5 transition-colors"
+                                  style={{ color: "var(--text-muted)" }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = "var(--blue-light)";
+                                    e.currentTarget.style.color = "var(--blue)";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = "transparent";
+                                    e.currentTarget.style.color = "var(--text-muted)";
+                                  }}
+                                  title="Open in new tab"
+                                >
+                                  <ExternalLink size={16} />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDownloadEvidence(e.id, e.fileName)}
+                                className="rounded-md p-1.5 transition-colors"
+                                style={{ color: "var(--text-muted)" }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "var(--green-light)";
+                                  e.currentTarget.style.color = "var(--green)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = "transparent";
+                                  e.currentTarget.style.color = "var(--text-muted)";
+                                }}
+                                title="Download"
+                              >
+                                <Download size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteEvidence(e.id)}
+                                className="rounded-md p-1.5 transition-colors"
+                                style={{ color: "var(--text-muted)" }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "var(--red-light)";
+                                  e.currentTarget.style.color = "var(--red)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = "transparent";
+                                  e.currentTarget.style.color = "var(--text-muted)";
+                                }}
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             </div>
                           </div>
-                          <button
-                            onClick={() => handleDeleteEvidence(e.id)}
-                            className="rounded-md p-1.5 transition-colors"
-                            style={{ color: "var(--text-muted)" }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = "var(--red-light)";
-                              e.currentTarget.style.color = "var(--red)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = "transparent";
-                              e.currentTarget.style.color = "var(--text-muted)";
-                            }}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="text-center text-sm" style={{ color: "var(--text-muted)" }}>

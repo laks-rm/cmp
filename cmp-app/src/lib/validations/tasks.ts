@@ -3,6 +3,7 @@ import { z } from "zod";
 export const taskQuerySchema = z.object({
   entityId: z.string().uuid().optional(),
   teamId: z.string().uuid().optional(),
+  sourceId: z.string().uuid().optional(),
   status: z.enum(["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED", "DEFERRED", "NOT_APPLICABLE"]).optional(),
   riskRating: z.enum(["HIGH", "MEDIUM", "LOW"]).optional(),
   frequency: z.enum(["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL", "BIENNIAL", "ONE_TIME"]).optional(),

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, memo } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useEntity } from "@/contexts/EntityContext";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -19,6 +20,7 @@ import {
   Clock,
   Calendar,
   TrendingUp,
+  X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { format, isPast } from "date-fns";
@@ -209,6 +211,10 @@ const TaskRow = memo(
 TaskRow.displayName = "TaskRow";
 
 export function TaskTrackerClient() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const sourceIdParam = searchParams.get("sourceId");
+  
   const { selectedEntityId, selectedTeamId } = useEntity();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -218,6 +224,7 @@ export function TaskTrackerClient() {
   const [total, setTotal] = useState(0);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [modalTaskId, setModalTaskId] = useState<string | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<{ id: string; name: string } | null>(null);
 
   const [filters, setFilters] = useState({
     preset: "all",
@@ -252,6 +259,9 @@ export function TaskTrackerClient() {
       if (filters.entity) {
         params.set("entityId", filters.entity);
       }
+      if (sourceIdParam) {
+        params.set("sourceId", sourceIdParam);
+      }
 
       if (filters.preset === "overdue") {
         params.set("status", "IN_PROGRESS");
@@ -271,7 +281,25 @@ export function TaskTrackerClient() {
     } finally {
       setLoading(false);
     }
-  }, [selectedEntityId, selectedTeamId, filters, searchQuery, page]);
+  }, [selectedEntityId, selectedTeamId, filters, searchQuery, page, sourceIdParam]);
+
+  // Load source information when sourceId parameter is present
+  useEffect(() => {
+    const loadSourceInfo = async () => {
+      if (sourceIdParam && !sourceFilter) {
+        try {
+          const res = await fetch(`/api/sources/${sourceIdParam}`);
+          if (res.ok) {
+            const source = await res.json();
+            setSourceFilter({ id: source.id, name: source.name });
+          }
+        } catch (error) {
+          console.error("Failed to load source info:", error);
+        }
+      }
+    };
+    loadSourceInfo();
+  }, [sourceIdParam, sourceFilter]);
 
   useEffect(() => {
     fetchTasks();
@@ -315,6 +343,11 @@ export function TaskTrackerClient() {
     }
   }
 
+  function clearSourceFilter() {
+    setSourceFilter(null);
+    router.push("/tasks");
+  }
+
   const presetFilters: FilterChip[] = [
     { id: "all", label: "All", active: filters.preset === "all" },
     { id: "overdue", label: "Overdue", active: filters.preset === "overdue", icon: <AlertCircle size={14} /> },
@@ -342,6 +375,26 @@ export function TaskTrackerClient() {
 
   return (
     <div className="space-y-4">
+      {/* Source Filter Indicator */}
+      {sourceFilter && (
+        <div className="flex items-center justify-between rounded-lg border p-3" style={{ backgroundColor: "var(--blue-light)", borderColor: "var(--blue)" }}>
+          <div className="flex items-center gap-2">
+            <Filter size={16} style={{ color: "var(--blue)" }} />
+            <span className="text-sm font-medium" style={{ color: "var(--blue)" }}>
+              Showing tasks for: <strong>{sourceFilter.name}</strong>
+            </span>
+          </div>
+          <button
+            onClick={clearSourceFilter}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white"
+            style={{ color: "var(--blue)", borderColor: "var(--blue)", borderWidth: "1px" }}
+          >
+            <X size={14} />
+            Clear filter
+          </button>
+        </div>
+      )}
+      
       <div className="flex items-center justify-between">
         <div className="flex flex-wrap items-center gap-2">
           {presetFilters.map((filter) => (
