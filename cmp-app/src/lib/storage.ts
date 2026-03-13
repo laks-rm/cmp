@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import path from "path";
-import { validateUploadMeta } from "@/lib/validation";
+import { validateUploadMeta, sanitizeFileName } from "@/lib/validation";
 
 export interface StorageService {
   upload(file: Buffer, filename: string, mimeType: string): Promise<string>;
@@ -21,12 +21,14 @@ function ensureFileId(fileUrl: string): string {
 
 export class LocalStorageService implements StorageService {
   async upload(file: Buffer, filename: string, mimeType: string): Promise<string> {
-    if (!validateUploadMeta({ fileName: filename, mimeType, fileSize: file.length })) {
-      throw new Error("Invalid file upload metadata");
+    const validation = validateUploadMeta({ fileName: filename, mimeType, fileSize: file.length });
+    if (!validation.valid) {
+      throw new Error(validation.error || "Invalid file upload metadata");
     }
 
     await mkdir(UPLOADS_DIR, { recursive: true });
-    const extension = path.extname(filename).toLowerCase();
+    const sanitized = sanitizeFileName(filename);
+    const extension = path.extname(sanitized).toLowerCase();
     const id = `${randomUUID()}${extension}`;
     const fullPath = path.join(UPLOADS_DIR, id);
     await writeFile(fullPath, file, { flag: "wx" });

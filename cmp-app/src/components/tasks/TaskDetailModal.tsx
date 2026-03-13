@@ -216,7 +216,10 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
         body: formData,
       });
 
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Upload failed");
+      }
 
       const newEvidence = await res.json();
       setEvidence((prev) => [...prev, newEvidence]);
@@ -224,7 +227,8 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
       if (onTaskUpdated) onTaskUpdated();
     } catch (error) {
       console.error("Upload error:", error);
-      toast.error("Failed to upload evidence");
+      const message = error instanceof Error ? error.message : "Failed to upload evidence";
+      toast.error(message);
     } finally {
       setUploading(false);
     }
@@ -441,7 +445,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
   const narrativeMet = !task?.narrativeRequired || narrative.trim().length > 0;
   
   // Field editability
-  const canUploadEvidence = canActOnTask && isInProgress;
+  const canUploadEvidence = canActOnTask && (isInProgress || isToDo);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)" }}>
