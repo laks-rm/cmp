@@ -4,6 +4,9 @@ export const taskQuerySchema = z.object({
   entityId: z.string().uuid().optional().or(z.literal("")),
   teamId: z.string().uuid().optional().or(z.literal("")),
   sourceId: z.string().uuid().optional().or(z.literal("")),
+  picId: z.string().uuid().optional().or(z.literal("")),
+  assigneeId: z.string().uuid().optional().or(z.literal("")),
+  responsibleTeamId: z.string().optional(),
   status: z.enum(["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED", "DEFERRED", "NOT_APPLICABLE"]).optional(),
   riskRating: z.enum(["HIGH", "MEDIUM", "LOW"]).optional(),
   frequency: z.enum(["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL", "BIENNIAL", "ONE_TIME"]).optional(),
@@ -13,6 +16,7 @@ export const taskQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(25),
   sortBy: z.enum(["name", "dueDate", "status", "riskRating", "createdAt"]).default("dueDate"),
   sortOrder: z.enum(["asc", "desc"]).default("asc"),
+  recurrenceGroupId: z.string().uuid().optional().or(z.literal("")),
 });
 
 export const createTaskSchema = z.object({

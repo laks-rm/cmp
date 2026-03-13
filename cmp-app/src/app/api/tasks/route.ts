@@ -61,6 +61,19 @@ export async function GET(req: NextRequest) {
       where.sourceId = params.sourceId;
     }
 
+    if (params.picId) {
+      where.picId = params.picId;
+    }
+
+    if (params.assigneeId) {
+      where.assigneeId = params.assigneeId;
+    }
+
+    if (params.responsibleTeamId) {
+      const teamIds = params.responsibleTeamId.split(",");
+      where.responsibleTeamId = { in: teamIds };
+    }
+
     if (params.recurrenceGroupId) {
       where.recurrenceGroupId = params.recurrenceGroupId;
     }

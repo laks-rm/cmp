@@ -133,6 +133,8 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
         return NextResponse.json({ error: "Invalid status transition" }, { status: 400 });
       }
 
+      updates.status = data.status;
+
       if (data.status === "PENDING_REVIEW") {
         updates.submittedAt = new Date();
         if (existingTask.reviewerId) {
@@ -177,6 +179,21 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
         details: {
           oldAssigneeId: existingTask.assigneeId,
           newAssigneeId: data.assigneeId,
+        },
+      });
+    }
+
+    if (data.picId && data.picId !== existingTask.picId) {
+      await logAuditEvent({
+        action: "TASK_PIC_CHANGED",
+        module: "TASKS",
+        userId: session.user.userId,
+        entityId: existingTask.entityId,
+        targetType: "Task",
+        targetId: taskId,
+        details: {
+          oldPicId: existingTask.picId,
+          newPicId: data.picId,
         },
       });
     }

@@ -33,6 +33,12 @@ type User = {
   avatarColor: string | null;
 };
 
+type Reviewer = User & {
+  role?: {
+    displayName: string;
+  } | null;
+};
+
 type Evidence = {
   id: string;
   fileName: string;
@@ -104,6 +110,7 @@ type Task = {
   reviewer: User | null;
   assigneeId: string | null;
   responsibleTeamId: string | null;
+  picId: string | null;
   reviewerId: string | null;
 };
 
@@ -121,7 +128,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
   const [comments, setComments] = useState<Comment[]>([]);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [recurrenceTasks, setRecurrenceTasks] = useState<Task[]>([]);
-  const [reviewers, setReviewers] = useState<User[]>([]);
+  const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [selectedReviewerId, setSelectedReviewerId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"details" | "evidence" | "comments" | "history">("details");
   const [loading, setLoading] = useState(true);
@@ -416,7 +423,6 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
   if (!isOpen) return null;
 
   const isOverdue = task?.dueDate && new Date(task.dueDate) < new Date() && task.status !== "COMPLETED";
-  const isAssignee = task?.assigneeId === session?.user.userId;
   const isPIC = task?.picId === session?.user.userId;
   const isReviewer = task?.reviewerId === session?.user.userId;
   const isPendingReview = task?.status === "PENDING_REVIEW";
@@ -427,15 +433,15 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
   const isNotApplicable = task?.status === "NOT_APPLICABLE";
   const reviewRequired = task?.reviewRequired ?? true;
 
-  // Check if user can act on this task (assignee or PIC)
-  const canActOnTask = isAssignee || isPIC;
+  // Check if user can act on this task (PIC)
+  const canActOnTask = isPIC;
 
   // Requirement checks
   const evidenceMet = !task?.evidenceRequired || evidence.length > 0;
   const narrativeMet = !task?.narrativeRequired || narrative.trim().length > 0;
   
   // Field editability
-  const canUploadEvidence = isAssignee && (isInProgress || isToDo);
+  const canUploadEvidence = canActOnTask && isInProgress;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)" }}>
@@ -891,11 +897,11 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                       onChange={(e) => setNarrative(e.target.value)}
                       placeholder="Add execution notes, context, or observations..."
                       rows={4}
-                      disabled={isToDo || isPendingReview || isCompleted || !isAssignee}
+                      disabled={isToDo || isPendingReview || isCompleted || !canActOnTask}
                       className="w-full rounded-lg border px-4 py-3 text-sm transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                       style={{
                         borderColor: "var(--border)",
-                        backgroundColor: (isToDo || isPendingReview || isCompleted || !isAssignee) ? "var(--bg-subtle)" : "white",
+                        backgroundColor: (isToDo || isPendingReview || isCompleted || !canActOnTask) ? "var(--bg-subtle)" : "white",
                         color: "var(--text-primary)",
                       }}
                       onFocus={(e) => (e.currentTarget.style.borderColor = "var(--blue)")}
@@ -1167,23 +1173,29 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                 {/* TO_DO: No access message */}
                 {isToDo && !canActOnTask && (
                   <div className="rounded-lg p-3 text-center text-sm" style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-muted)" }}>
-                    Only the assignee or person in charge can start this task
+                    Only the person in charge (PIC) can start this task
                   </div>
                 )}
 
-                {/* IN_PROGRESS: Submit buttons */}
+                {/* IN_PROGRESS: Submit buttons (PIC only) */}
                 {isInProgress && canActOnTask && (
                   <div className="flex gap-3">
                     {reviewRequired ? (
-                      <button
-                        onClick={() => handleTaskAction("submit-review")}
-                        className="flex flex-1 items-center justify-center gap-2 rounded-lg px-6 py-3 text-base font-semibold text-white transition-opacity"
-                        style={{ backgroundColor: "var(--blue)" }}
-                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
-                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                      >
-                        Submit for Review
-                      </button>
+                      isPIC ? (
+                        <button
+                          onClick={() => handleTaskAction("submit-review")}
+                          className="flex flex-1 items-center justify-center gap-2 rounded-lg px-6 py-3 text-base font-semibold text-white transition-opacity"
+                          style={{ backgroundColor: "var(--blue)" }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                        >
+                          Submit for Review
+                        </button>
+                      ) : (
+                        <div className="rounded-lg p-3 text-center text-sm" style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-muted)" }}>
+                          Only the person in charge (PIC) can submit this task for review
+                        </div>
+                      )
                     ) : (
                       <button
                         onClick={() => handleTaskAction("mark-complete")}
@@ -1242,8 +1254,8 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                   </div>
                 )}
 
-                {/* PENDING_REVIEW: Recall option for assignee */}
-                {isPendingReview && isAssignee && (
+                {/* PENDING_REVIEW: Recall option for PIC */}
+                {isPendingReview && isPIC && (
                   <button
                     onClick={() => handleTaskAction("recall")}
                     className="mt-2 w-full rounded-lg px-4 py-2 text-sm font-medium transition-colors"

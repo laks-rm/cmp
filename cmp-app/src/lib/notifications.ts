@@ -45,10 +45,10 @@ export async function notifyTaskSubmitted(taskId: string, taskName: string, revi
   );
 }
 
-export async function notifyTaskApproved(taskId: string, taskName: string, assigneeId: string, reviewerName: string): Promise<void> {
+export async function notifyTaskApproved(taskId: string, taskName: string, picId: string, reviewerName: string): Promise<void> {
   await createNotification(
     "TASK_APPROVED",
-    assigneeId,
+    picId,
     "Task Approved",
     `${reviewerName} approved your task "${taskName}"`,
     `/tasks/${taskId}`
@@ -58,7 +58,7 @@ export async function notifyTaskApproved(taskId: string, taskName: string, assig
 export async function notifyTaskRejected(
   taskId: string,
   taskName: string,
-  assigneeId: string,
+  picId: string,
   reviewerName: string,
   reason?: string
 ): Promise<void> {
@@ -68,17 +68,17 @@ export async function notifyTaskRejected(
 
   await createNotification(
     "TASK_REJECTED",
-    assigneeId,
+    picId,
     "Changes Requested",
     message,
     `/tasks/${taskId}`
   );
 }
 
-export async function notifyTaskAssigned(taskId: string, taskName: string, assigneeId: string, entityName: string): Promise<void> {
+export async function notifyTaskAssigned(taskId: string, taskName: string, picId: string, entityName: string): Promise<void> {
   await createNotification(
     "TASK_ASSIGNED",
-    assigneeId,
+    picId,
     "Task Assigned",
     `You've been assigned to task "${taskName}" for ${entityName}`,
     `/tasks/${taskId}`

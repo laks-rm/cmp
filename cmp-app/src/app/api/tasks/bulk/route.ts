@@ -34,17 +34,17 @@ export async function POST(req: NextRequest) {
         const updates: Record<string, unknown> = {};
 
         if (action === "assign" && assigneeId) {
-          updates.assigneeId = assigneeId;
+          updates.picId = assigneeId;
           await logAuditEvent({
-            action: "TASK_ASSIGNED",
+            action: "TASK_PIC_CHANGED",
             module: "TASKS",
             userId: session.user.userId,
             entityId: task.entityId,
             targetType: "Task",
             targetId: task.id,
             details: {
-              oldAssigneeId: task.assigneeId,
-              newAssigneeId: assigneeId,
+              oldPicId: task.picId,
+              newPicId: assigneeId,
               bulkOperation: true,
             },
           });

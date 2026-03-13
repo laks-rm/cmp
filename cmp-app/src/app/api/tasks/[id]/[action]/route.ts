@@ -35,9 +35,9 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
 
     switch (action) {
       case "recall": {
-        // Only assignee can recall from PENDING_REVIEW
-        if (task.assigneeId !== session.user.userId) {
-          return NextResponse.json({ error: "Only the assignee can recall this task" }, { status: 403 });
+        // Only PIC can recall from PENDING_REVIEW
+        if (task.picId !== session.user.userId) {
+          return NextResponse.json({ error: "Only the person in charge (PIC) can recall this task" }, { status: 403 });
         }
         if (task.status !== "PENDING_REVIEW") {
           return NextResponse.json({ error: "Task must be in PENDING_REVIEW status" }, { status: 400 });
@@ -107,9 +107,9 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
           },
         });
 
-        // Notify assignee
-        if (task.assigneeId) {
-          await notifyTaskApproved(taskId, task.name, task.assigneeId, session.user.name || "Reviewer");
+        // Notify PIC
+        if (task.picId) {
+          await notifyTaskApproved(taskId, task.name, task.picId, session.user.name || "Reviewer");
         }
 
         await logAuditEvent({
@@ -168,9 +168,9 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
           });
         }
 
-        // Notify assignee
-        if (task.assigneeId) {
-          await notifyTaskRejected(taskId, task.name, task.assigneeId, session.user.name || "Reviewer", comment);
+        // Notify PIC
+        if (task.picId) {
+          await notifyTaskRejected(taskId, task.name, task.picId, session.user.name || "Reviewer", comment);
         }
 
         await logAuditEvent({
@@ -188,8 +188,8 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
 
       case "mark-complete": {
         // For tasks without approval requirement (CompOps)
-        if (task.assigneeId !== session.user.userId && task.picId !== session.user.userId) {
-          return NextResponse.json({ error: "Only assignee or PIC can mark task complete" }, { status: 403 });
+        if (task.picId !== session.user.userId) {
+          return NextResponse.json({ error: "Only the person in charge (PIC) can mark task complete" }, { status: 403 });
         }
         if (task.source.team.approvalRequired) {
           return NextResponse.json({ error: "This task requires approval workflow" }, { status: 400 });
@@ -229,9 +229,9 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
       }
 
       case "submit-review": {
-        // Only assignee can submit for review
-        if (task.assigneeId !== session.user.userId) {
-          return NextResponse.json({ error: "Only the assignee can submit this task for review" }, { status: 403 });
+        // Only PIC can submit for review
+        if (task.picId !== session.user.userId) {
+          return NextResponse.json({ error: "Only the person in charge (PIC) can submit this task for review" }, { status: 403 });
         }
         if (task.status !== "IN_PROGRESS") {
           return NextResponse.json({ error: "Task must be IN_PROGRESS" }, { status: 400 });

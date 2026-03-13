@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, memo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useEntity } from "@/contexts/EntityContext";
 import { EntityBadge } from "@/components/ui/EntityBadge";
@@ -24,6 +25,8 @@ import {
   X,
   Info,
   ArrowRight,
+  User,
+  UserCheck,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { format, isPast } from "date-fns";
@@ -43,6 +46,7 @@ type Task = {
   source: { id: string; name: string; code: string };
   sourceItem: { reference: string } | null;
   assignee: { id: string; name: string; initials: string; avatarColor: string | null } | null;
+  pic: { id: string; name: string; initials: string; avatarColor: string | null } | null;
   responsibleTeam: { id: string; name: string } | null;
 };
 
@@ -216,6 +220,7 @@ export function TaskTrackerClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sourceIdParam = searchParams.get("sourceId");
+  const { data: session } = useSession();
   
   const { selectedEntityId, selectedTeamId } = useEntity();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -271,6 +276,10 @@ export function TaskTrackerClient() {
         params.set("status", "PENDING_REVIEW");
       } else if (filters.preset === "high-risk") {
         params.set("riskRating", "HIGH");
+      } else if (filters.preset === "my-tasks" && session?.user?.userId) {
+        params.set("picId", session.user.userId);
+      } else if (filters.preset === "my-team" && session?.user?.teamIds) {
+        params.set("responsibleTeamId", session.user.teamIds.join(","));
       }
 
       const res = await fetch(`/api/tasks?${params.toString()}`);
@@ -283,7 +292,7 @@ export function TaskTrackerClient() {
     } finally {
       setLoading(false);
     }
-  }, [selectedEntityId, selectedTeamId, filters, searchQuery, page, sourceIdParam]);
+  }, [selectedEntityId, selectedTeamId, filters, searchQuery, page, sourceIdParam, session]);
 
   // Load source information when sourceId parameter is present
   useEffect(() => {
@@ -352,6 +361,8 @@ export function TaskTrackerClient() {
 
   const presetFilters: FilterChip[] = [
     { id: "all", label: "All", active: filters.preset === "all" },
+    { id: "my-tasks", label: "My Tasks", active: filters.preset === "my-tasks", icon: <User size={14} /> },
+    { id: "my-team", label: "My Team", active: filters.preset === "my-team", icon: <UserCheck size={14} /> },
     { id: "overdue", label: "Overdue", active: filters.preset === "overdue", icon: <AlertCircle size={14} /> },
     { id: "pending-review", label: "Pending Review", active: filters.preset === "pending-review", icon: <Clock size={14} /> },
     { id: "due-week", label: "Due This Week", active: filters.preset === "due-week", icon: <CalendarIcon size={14} /> },
