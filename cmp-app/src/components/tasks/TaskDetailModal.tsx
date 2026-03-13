@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { EntityBadge } from "@/components/ui/EntityBadge";
+import { FindingModal } from "@/components/findings/FindingModal";
 import toast from "react-hot-toast";
 
 type User = {
@@ -137,6 +138,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
   const [newComment, setNewComment] = useState("");
   const [narrative, setNarrative] = useState("");
   const [showInfoCallout, setShowInfoCallout] = useState(true);
+  const [showFindingModal, setShowFindingModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Check localStorage for dismissed info callout
@@ -1298,6 +1300,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
               {(isInProgress || isCompleted) && (
                 <div className="p-4">
                   <button
+                    onClick={() => setShowFindingModal(true)}
                     className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
                     style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-secondary)" }}
                     onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-muted)")}
@@ -1312,6 +1315,21 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
           </>
         )}
       </div>
+
+      {/* Finding Modal */}
+      {showFindingModal && task && (
+        <FindingModal
+          isOpen={showFindingModal}
+          onClose={() => setShowFindingModal(false)}
+          onSuccess={() => {
+            setShowFindingModal(false);
+            toast.success("Finding raised successfully");
+            // Refresh task data to show the linked finding
+            fetchTaskData();
+          }}
+          linkedTaskId={task.id}
+        />
+      )}
     </div>
   );
 }

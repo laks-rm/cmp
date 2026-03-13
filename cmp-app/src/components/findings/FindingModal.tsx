@@ -53,8 +53,30 @@ export function FindingModal({ isOpen, onClose, onSuccess, linkedTaskId }: Findi
       fetchSources();
       fetchUsers();
       fetchEntities();
+      
+      // If linkedTaskId is provided, fetch task data and pre-fill fields
+      if (linkedTaskId) {
+        fetchLinkedTask(linkedTaskId);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, linkedTaskId]);
+
+  const fetchLinkedTask = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`);
+      if (res.ok) {
+        const taskData = await res.json();
+        setFormData(prev => ({
+          ...prev,
+          taskId: taskId,
+          sourceId: taskData.sourceId || "",
+          entityId: taskData.entityId || "",
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to fetch linked task:", error);
+    }
+  };
 
   const fetchSources = async () => {
     try {
