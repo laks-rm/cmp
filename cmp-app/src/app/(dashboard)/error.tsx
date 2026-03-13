@@ -39,7 +39,7 @@ export default function DashboardError({
 
         <div className="flex gap-3">
           <button
-            onClick={() => window.location.href = "/dashboard"}
+            onClick={() => window.location.href = "/"}
             className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
             style={{ borderColor: "var(--border)", color: "var(--text-secondary)", backgroundColor: "white" }}
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
