@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { signIn } from "next-auth/react";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 export function ManualLoginForm() {
   const [email, setEmail] = useState("");

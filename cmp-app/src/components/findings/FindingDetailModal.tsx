@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { X, FileText, Send } from "lucide-react";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type FindingDetailModalProps = {
   isOpen: boolean;

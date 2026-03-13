@@ -15,6 +15,7 @@ const createUserSchema = z.object({
   roleId: z.string().uuid(),
   teamIds: z.array(z.string().uuid()),
   entityIds: z.array(z.string().uuid()).min(1, "At least one entity required"),
+  timezone: z.string().max(100).default("UTC"),
 });
 
 export async function GET() {
@@ -109,6 +110,7 @@ export async function POST(req: NextRequest) {
         passwordHash,
         initials: initials.toUpperCase(),
         roleId: validatedData.roleId,
+        timezone: validatedData.timezone,
         isActive: true,
         teamMemberships: {
           create: validatedData.teamIds.map((teamId) => ({

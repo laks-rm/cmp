@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Plus, Edit2, UserX, Check, X } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { Modal } from "@/components/ui/Modal";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
+import { COMMON_TIMEZONES } from "@/lib/timezones";
 
 type User = {
   id: string;
@@ -63,6 +64,7 @@ export function UsersAccessTab() {
     teamIds: [] as string[],
     entityIds: [] as string[],
     grantAllEntities: false,
+    timezone: "UTC",
   });
 
   const fetchUsers = useCallback(async () => {
@@ -129,6 +131,7 @@ export function UsersAccessTab() {
         teamIds: user.teamMemberships.map((tm) => tm.team.id),
         entityIds: user.entityAccess.map((ea) => ea.entity.id),
         grantAllEntities: user.entityAccess.length === entities.length,
+        timezone: (user as User & { timezone?: string }).timezone || "UTC",
       });
     } else {
       setEditingUser(null);
@@ -140,6 +143,7 @@ export function UsersAccessTab() {
         teamIds: [],
         entityIds: [],
         grantAllEntities: false,
+        timezone: "UTC",
       });
     }
     setShowUserModal(true);
@@ -410,6 +414,24 @@ export function UsersAccessTab() {
               {roles.map((role) => (
                 <option key={role.id} value={role.id}>
                   {role.displayName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+              Timezone
+            </label>
+            <select
+              value={formData.timezone}
+              onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+              style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+            >
+              {COMMON_TIMEZONES.map((tz) => (
+                <option key={tz.value} value={tz.value}>
+                  {tz.label}
                 </option>
               ))}
             </select>

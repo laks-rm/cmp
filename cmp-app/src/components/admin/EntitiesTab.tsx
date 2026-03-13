@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Edit2, CheckCircle, XCircle } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type Entity = {
   id: string;

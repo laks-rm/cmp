@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, ChevronRight, ChevronLeft, AlertCircle, CheckCircle, Plus, Trash2, ChevronDown, FileText, Table, Upload, Loader } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type Team = {
   id: string;

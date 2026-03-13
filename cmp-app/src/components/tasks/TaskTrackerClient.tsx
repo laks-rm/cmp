@@ -28,7 +28,7 @@ import {
   User,
   UserCheck,
 } from "lucide-react";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 import { format, isPast } from "date-fns";
 
 type Task = {
@@ -271,7 +271,7 @@ export function TaskTrackerClient() {
       }
 
       if (filters.preset === "overdue") {
-        params.set("status", "IN_PROGRESS");
+        params.set("overdue", "true");
       } else if (filters.preset === "pending-review") {
         params.set("status", "PENDING_REVIEW");
       } else if (filters.preset === "high-risk") {

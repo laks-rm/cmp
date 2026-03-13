@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, CheckSquare, AlertTriangle, TrendingUp, FileText } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { SourceWizard } from "@/components/sources/SourceWizard";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type Source = {
   id: string;

@@ -17,6 +17,10 @@ export const taskQuerySchema = z.object({
   sortBy: z.enum(["name", "dueDate", "status", "riskRating", "createdAt"]).default("dueDate"),
   sortOrder: z.enum(["asc", "desc"]).default("asc"),
   recurrenceGroupId: z.string().uuid().optional().or(z.literal("")),
+  overdue: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
 });
 
 export const createTaskSchema = z.object({

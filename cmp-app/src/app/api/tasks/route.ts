@@ -7,6 +7,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { taskQuerySchema, createTaskSchema } from "@/lib/validations/tasks";
 import { Prisma } from "@prisma/client";
 import { activatePlannedTasks } from "@/lib/taskActivation";
+import { toZonedTime } from "date-fns-tz";
 
 export async function GET(req: NextRequest) {
   try {
@@ -78,6 +79,16 @@ export async function GET(req: NextRequest) {
       where.recurrenceGroupId = params.recurrenceGroupId;
     }
 
+    // Overdue filter: due date before start of today (user timezone), exclude completed
+    if (params.overdue) {
+      const userTimezone = session.user.timezone || "UTC";
+      const nowInUserTz = toZonedTime(new Date(), userTimezone);
+      nowInUserTz.setHours(0, 0, 0, 0);
+      const startOfTodayUTC = new Date(nowInUserTz.toISOString());
+      where.dueDate = { lt: startOfTodayUTC };
+      where.status = { notIn: ["COMPLETED", "PLANNED"] };
+    }
+
     if (params.search) {
       where.OR = [{ name: { contains: params.search, mode: "insensitive" } }, { description: { contains: params.search, mode: "insensitive" } }];
     }
@@ -95,57 +106,102 @@ export async function GET(req: NextRequest) {
       orderBy.createdAt = params.sortOrder;
     }
 
-    const [tasks, total] = await Promise.all([
-      prisma.task.findMany({
-        where,
+    const include = {
+      source: {
         include: {
-          source: {
-            include: {
-              team: true,
-              items: {
-                take: 1,
-              },
-            },
-          },
-          sourceItem: true,
-          entity: true,
-          assignee: {
-            select: {
-              id: true,
-              name: true,
-              initials: true,
-              avatarColor: true,
-            },
-          },
-          responsibleTeam: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-          pic: {
-            select: {
-              id: true,
-              name: true,
-              initials: true,
-              avatarColor: true,
-            },
-          },
-          reviewer: {
-            select: {
-              id: true,
-              name: true,
-              initials: true,
-              avatarColor: true,
-            },
-          },
+          team: true,
+          items: { take: 1 },
         },
-        orderBy,
-        skip: (params.page - 1) * params.limit,
-        take: params.limit,
-      }),
-      prisma.task.count({ where }),
-    ]);
+      },
+      sourceItem: true,
+      entity: true,
+      assignee: { select: { id: true, name: true, initials: true, avatarColor: true } },
+      responsibleTeam: { select: { id: true, name: true } },
+      pic: { select: { id: true, name: true, initials: true, avatarColor: true } },
+      reviewer: { select: { id: true, name: true, initials: true, avatarColor: true } },
+    };
+
+    // Default Task Tracker view (no sourceId): show actionable queue only — all overdue open,
+    // plus earliest upcoming open per recurrence group. Sources -> View Tasks (sourceId set) shows full list.
+    const isQueueView = !params.sourceId;
+    let tasks: Awaited<ReturnType<typeof prisma.task.findMany>>;
+    let total: number;
+
+    if (isQueueView) {
+      const all = await prisma.task.findMany({
+        where,
+        include,
+        orderBy: { dueDate: "asc" },
+      });
+      const userTimezone = session.user.timezone || "UTC";
+      const nowInUserTz = toZonedTime(new Date(), userTimezone);
+      nowInUserTz.setHours(0, 0, 0, 0);
+      const startOfTodayUTC = new Date(nowInUserTz.toISOString());
+      const OPEN_STATUSES = new Set(["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "DEFERRED", "NOT_APPLICABLE"]);
+
+      const overdue = all.filter(
+        (t) => t.dueDate !== null && t.dueDate < startOfTodayUTC
+      );
+      const upcoming = all.filter(
+        (t) => t.dueDate === null || t.dueDate >= startOfTodayUTC
+      );
+      const isOpen = (t: (typeof all)[0]) => OPEN_STATUSES.has(t.status);
+
+      // Upcoming open: keep only earliest per recurrence group (by dueDate). Non-recurring (recurrenceGroupId null) stay all.
+      const upcomingOpen = upcoming.filter(isOpen);
+      const byGroup = new Map<string | null, typeof upcomingOpen>();
+      for (const t of upcomingOpen) {
+        const key = t.recurrenceGroupId ?? `single:${t.id}`;
+        if (!byGroup.has(key)) byGroup.set(key, []);
+        byGroup.get(key)!.push(t);
+      }
+      const earliestPerGroup: typeof all = [];
+      for (const group of byGroup.values()) {
+        const sorted = [...group].sort((a, b) => {
+          if (a.dueDate === null && b.dueDate === null) return 0;
+          if (a.dueDate === null) return 1;
+          if (b.dueDate === null) return -1;
+          return a.dueDate.getTime() - b.dueDate.getTime();
+        });
+        earliestPerGroup.push(sorted[0]);
+      }
+      const upcomingCompleted = upcoming.filter((t) => !isOpen(t));
+      const queueIds = new Set([
+        ...overdue.map((t) => t.id),
+        ...earliestPerGroup.map((t) => t.id),
+        ...upcomingCompleted.map((t) => t.id),
+      ]);
+      const filtered = all.filter((t) => queueIds.has(t.id));
+
+      const sortOrder = params.sortOrder === "desc" ? -1 : 1;
+      const sortKey = params.sortBy;
+      filtered.sort((a, b) => {
+        let av: string | number | Date | null = (a as Record<string, unknown>)[sortKey] as string | number | Date | null;
+        let bv: string | number | Date | null = (b as Record<string, unknown>)[sortKey] as string | number | Date | null;
+        if (av instanceof Date) av = av.getTime();
+        if (bv instanceof Date) bv = bv === null ? 0 : bv.getTime();
+        if (av == null) av = sortOrder === 1 ? Infinity : -Infinity;
+        if (bv == null) bv = sortOrder === 1 ? Infinity : -Infinity;
+        if (typeof av === "string" && typeof bv === "string") return sortOrder * av.localeCompare(bv);
+        return sortOrder * ((av as number) - (bv as number));
+      });
+
+      total = filtered.length;
+      tasks = filtered.slice((params.page - 1) * params.limit, params.page * params.limit);
+    } else {
+      const [taskList, count] = await Promise.all([
+        prisma.task.findMany({
+          where,
+          include,
+          orderBy,
+          skip: (params.page - 1) * params.limit,
+          take: params.limit,
+        }),
+        prisma.task.count({ where }),
+      ]);
+      tasks = taskList;
+      total = count;
+    }
 
     return NextResponse.json({
       tasks,

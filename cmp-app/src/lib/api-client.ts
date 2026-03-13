@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 export interface ApiErrorResponse {
   error: string;

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useEntity } from "@/contexts/EntityContext";
 import { format } from "date-fns";
 import { Download, ChevronLeft, ChevronRight, Clock } from "lucide-react";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type AuditEntry = {
   id: string;

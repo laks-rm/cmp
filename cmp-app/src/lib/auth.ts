@@ -22,6 +22,7 @@ type AuthUser = {
   roleName: string;
   entityIds: string[];
   teamIds: string[];
+  timezone: string;
 };
 
 function getProviders() {
@@ -108,6 +109,7 @@ function getProviders() {
           roleName: user.role.name,
           entityIds: user.entityAccess.map((access) => access.entityId),
           teamIds: user.teamMemberships.map((membership) => membership.teamId),
+          timezone: user.timezone,
         };
       },
     }),
@@ -139,6 +141,7 @@ export const authOptions: NextAuthOptions = {
         token.roleName = authUser.roleName;
         token.entityIds = authUser.entityIds;
         token.teamIds = authUser.teamIds;
+        token.timezone = authUser.timezone;
         token.lastRefreshAt = Date.now();
       }
 
@@ -176,6 +179,7 @@ export const authOptions: NextAuthOptions = {
         token.roleName = dbUser.role.name;
         token.entityIds = dbUser.entityAccess.map((access) => access.entityId);
         token.teamIds = dbUser.teamMemberships.map((membership) => membership.teamId);
+        token.timezone = dbUser.timezone;
         token.lastRefreshAt = Date.now();
       }
 
@@ -196,6 +200,7 @@ export const authOptions: NextAuthOptions = {
         roleName: token.roleName,
         entityIds: token.entityIds ?? [],
         teamIds: token.teamIds ?? [],
+        timezone: token.timezone ?? "UTC",
       };
       return session;
     },

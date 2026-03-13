@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, CheckSquare, Calendar, FileText, AlertTriangle, BarChart3, Clock, Settings, ChevronDown, Globe } from "lucide-react";
+import { LayoutDashboard, BookOpen, CheckSquare, Calendar, FileText, AlertTriangle, BarChart3, Clock, Settings, ChevronDown, Globe, AlertOctagon } from "lucide-react";
 import { useEntity } from "@/contexts/EntityContext";
 
 type SidebarProps = {
@@ -29,6 +29,7 @@ const NAV_ITEMS = [
   { href: "/findings", label: "Findings", icon: AlertTriangle, section: "manage", badge: 0 },
   { href: "/reports", label: "Reports", icon: BarChart3, section: "insights" },
   { href: "/audit-log", label: "Audit Log", icon: Clock, section: "insights" },
+  { href: "/admin/error-logs", label: "Error Logs", icon: AlertOctagon, section: "insights", superAdminOnly: true },
   { href: "/admin", label: "Admin", icon: Settings, section: "settings" },
 ];
 
@@ -45,7 +46,19 @@ export function Sidebar({ user, entities, teams, allowedHrefs }: SidebarProps) {
   const [isEntityOpen, setIsEntityOpen] = useState(false);
   const [isTeamOpen, setIsTeamOpen] = useState(false);
 
-  const visibleItems = allowedHrefs ? NAV_ITEMS.filter((item) => allowedHrefs.includes(item.href)) : NAV_ITEMS;
+  const visibleItems = allowedHrefs 
+    ? NAV_ITEMS.filter((item) => {
+        // Filter by allowed hrefs
+        if (!allowedHrefs.includes(item.href)) return false;
+        // Filter super admin only items
+        if ((item as any).superAdminOnly && user.roleName !== "SUPER_ADMIN") return false;
+        return true;
+      })
+    : NAV_ITEMS.filter((item) => {
+        // Filter super admin only items
+        if ((item as any).superAdminOnly && user.roleName !== "SUPER_ADMIN") return false;
+        return true;
+      });
 
   const selectedEntity = entities.find((e) => e.id === selectedEntityId);
   const selectedTeam = teams.find((t) => t.id === selectedTeamId);

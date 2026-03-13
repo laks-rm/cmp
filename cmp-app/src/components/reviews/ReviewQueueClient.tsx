@@ -7,7 +7,7 @@ import { FileText, Paperclip } from "lucide-react";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type Task = {
   id: string;

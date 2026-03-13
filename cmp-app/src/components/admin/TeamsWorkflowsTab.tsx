@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Settings, CheckCircle, XCircle } from "lucide-react";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type Team = {
   id: string;

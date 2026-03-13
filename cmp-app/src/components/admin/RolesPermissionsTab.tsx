@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Check, X, Minus, Save } from "lucide-react";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type Role = {
   id: string;

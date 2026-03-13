@@ -156,6 +156,7 @@ model User {
   roleId          String
   isActive        Boolean            @default(true)
   avatarColor     String?
+  timezone        String             @default("UTC")
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   role            Role               @relation(fields: [roleId], references: [id], onDelete: Restrict)
@@ -170,6 +171,8 @@ model User {
   uploadedFiles   Evidence[]
   auditLogs       AuditLog[]
   notifications   Notification[]
+  errorLogs       ErrorLog[]         @relation("ErrorLogs")
+  resolvedErrors  ErrorLog[]         @relation("ResolvedErrors")
 }
 
 model UserEntityAccess {
@@ -412,4 +415,60 @@ model Notification {
 
   @@index([userId])
   @@index([isRead])
+}
+
+enum ErrorType {
+  PAGE_CRASH
+  ROUTE_ERROR
+  NOT_FOUND
+  API_FAILURE
+  NETWORK_ERROR
+  TIMEOUT
+  UNAUTHORIZED
+  FORBIDDEN
+  COMPONENT_ERROR
+  RENDER_ERROR
+  DATA_FETCH_FAILED
+  DATA_VALIDATION_FAILED
+  SAVE_FAILED
+  DELETE_FAILED
+  UPDATE_FAILED
+}
+
+enum ErrorSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+model ErrorLog {
+  id              String         @id @default(uuid())
+  errorType       ErrorType
+  errorMessage    String         @db.Text
+  errorStack      String?        @db.Text
+  errorDigest     String?
+  url             String
+  userAgent       String?
+  userId          String?
+  user            User?          @relation("ErrorLogs", fields: [userId], references: [id], onDelete: SetNull)
+  httpMethod      String?
+  statusCode      Int?
+  apiEndpoint     String?
+  requestBody     Json?
+  environment     String         @default("production")
+  appVersion      String?
+  severity        ErrorSeverity  @default(ERROR)
+  resolved        Boolean        @default(false)
+  resolvedAt      DateTime?
+  resolvedById    String?
+  resolver        User?          @relation("ResolvedErrors", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolutionNotes String?        @db.Text
+  createdAt       DateTime       @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([errorType])
+  @@index([resolved])
+  @@index([severity])
 }

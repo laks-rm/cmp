@@ -13,6 +13,7 @@ const MODULES = [
   "FINDINGS",
   "REPORTS",
   "AUDIT_LOG",
+  "SYSTEM_MONITORING",
   "USER_MANAGEMENT",
   "ROLE_MANAGEMENT",
   "ENTITY_CONFIG",
@@ -23,7 +24,7 @@ const MODULES = [
 
 const ACTIONS = ["VIEW", "CREATE", "EDIT", "DELETE", "APPROVE", "EXPORT", "ADMIN_CONFIG"] as const;
 
-const ADMIN_MODULES = new Set(["USER_MANAGEMENT", "ROLE_MANAGEMENT", "ENTITY_CONFIG", "TEAM_CONFIG", "WORKFLOW_CONFIG", "NOTIFICATION_CONFIG"]);
+const ADMIN_MODULES = new Set(["USER_MANAGEMENT", "ROLE_MANAGEMENT", "ENTITY_CONFIG", "TEAM_CONFIG", "WORKFLOW_CONFIG", "NOTIFICATION_CONFIG", "SYSTEM_MONITORING"]);
 const CORE_MODULES = new Set(["DASHBOARD", "SOURCES", "TASKS", "CALENDAR", "TASK_EXECUTION", "REVIEW_QUEUE", "FINDINGS", "REPORTS", "AUDIT_LOG"]);
 
 function managerGrant(module: string, action: string): boolean {
@@ -360,6 +361,7 @@ async function main(): Promise<void> {
       teamNames: teams.map((t) => t.name),
       entityCodes: entities.map((e) => e.code),
       avatarColor: "from-purple-500 to-indigo-600",
+      timezone: "Asia/Dubai",
     },
     {
       email: "gary.roberts@cmp.local",
@@ -369,6 +371,7 @@ async function main(): Promise<void> {
       teamNames: teams.map((t) => t.name),
       entityCodes: entities.map((e) => e.code),
       avatarColor: "from-blue-500 to-cyan-500",
+      timezone: "Europe/London",
     },
     {
       email: "sarah.mitchell@cmp.local",
@@ -378,6 +381,7 @@ async function main(): Promise<void> {
       teamNames: ["Compliance"],
       entityCodes: ["DIEL", "DGL"],
       avatarColor: "from-emerald-500 to-teal-600",
+      timezone: "Europe/London",
     },
     {
       email: "waed.alrashid@cmp.local",
@@ -387,6 +391,7 @@ async function main(): Promise<void> {
       teamNames: ["CompOps"],
       entityCodes: ["DIEL", "DGL", "DBVI"],
       avatarColor: "from-orange-500 to-amber-600",
+      timezone: "Asia/Dubai",
     },
     {
       email: "ahmed.khalil@cmp.local",
@@ -396,6 +401,7 @@ async function main(): Promise<void> {
       teamNames: ["Compliance"],
       entityCodes: ["DIEL"],
       avatarColor: "from-rose-500 to-pink-600",
+      timezone: "Asia/Dubai",
     },
     {
       email: "reem.khalil@cmp.local",
@@ -405,6 +411,7 @@ async function main(): Promise<void> {
       teamNames: ["CompOps"],
       entityCodes: ["DIEL"],
       avatarColor: "from-slate-500 to-slate-700",
+      timezone: "Asia/Dubai",
     },
   ];
 
@@ -417,6 +424,7 @@ async function main(): Promise<void> {
         roleId: roleByName[seedUser.role].id,
         passwordHash,
         avatarColor: seedUser.avatarColor,
+        timezone: seedUser.timezone,
         isActive: true,
       },
       create: {
@@ -426,6 +434,7 @@ async function main(): Promise<void> {
         roleId: roleByName[seedUser.role].id,
         passwordHash,
         avatarColor: seedUser.avatarColor,
+        timezone: seedUser.timezone,
         isActive: true,
       },
     });

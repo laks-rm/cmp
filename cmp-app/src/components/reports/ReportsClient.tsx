@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { FileText, Download, FileSpreadsheet, FileDown } from "lucide-react";
 import { useEntity } from "@/contexts/EntityContext";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type Entity = {
   id: string;

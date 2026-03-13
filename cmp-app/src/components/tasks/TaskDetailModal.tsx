@@ -25,7 +25,7 @@ import {
 import { StatusPill } from "@/components/ui/StatusPill";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { FindingModal } from "@/components/findings/FindingModal";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type User = {
   id: string;
