@@ -2358,6 +2358,35 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
               {/* Spreadsheet Method */}
               {inputMethod === "spreadsheet" && (
                 <div className="space-y-6">
+                  {/* Existing Items Section - Only shown when adding to existing source */}
+                  {existingSource && items.length > 0 && (
+                    <div className="rounded-[14px] border p-4" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
+                      <h4 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>
+                        Existing Items ({items.length})
+                      </h4>
+                      <div className="space-y-2">
+                        {items.map((item) => (
+                          <div key={item.tempId} className="flex items-center justify-between rounded-lg border bg-white px-4 py-2" style={{ borderColor: "var(--border-light)" }}>
+                            <div className="flex items-center gap-3">
+                              <span className="font-mono text-xs font-bold" style={{ color: "var(--purple)" }}>
+                                {item.reference}
+                              </span>
+                              <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                {item.title}
+                              </span>
+                            </div>
+                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                              {item.tasks.length} task{item.tasks.length !== 1 ? "s" : ""}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs mt-3" style={{ color: "var(--text-muted)" }}>
+                        Add new clauses and tasks below. Existing items above will not be modified.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Paste from Excel Section */}
                   <div className="rounded-[14px] border p-6" style={{ borderColor: "var(--border)", backgroundColor: "white" }}>
                     <h4 className="mb-4 text-base font-semibold" style={{ color: "var(--text-primary)" }}>

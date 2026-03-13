@@ -439,8 +439,16 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
   const isNotApplicable = task?.status === "NOT_APPLICABLE";
   const reviewRequired = task?.reviewRequired ?? true;
 
-  // Check if user can act on this task (PIC)
-  const canActOnTask = isPIC;
+  // Check if user is a member of the responsible team
+  const isTeamMember = task?.responsibleTeamId 
+    ? session?.user.teamIds?.includes(task.responsibleTeamId) 
+    : false;
+
+  // Check if user is Super Admin
+  const isSuperAdmin = session?.user.roleName === "Super Admin";
+
+  // User can act on the task if they are the PIC, a member of the responsible team, or a Super Admin
+  const canActOnTask = isPIC || isTeamMember || isSuperAdmin;
 
   // Requirement checks
   const evidenceMet = !task?.evidenceRequired || evidence.length > 0;
