@@ -85,7 +85,7 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    await requirePermission(session, "TASKS", "EDIT");
+    await requirePermission(session, "TASK_EXECUTION", "EDIT");
 
     const taskId = context.params.id;
     const body = await req.json();

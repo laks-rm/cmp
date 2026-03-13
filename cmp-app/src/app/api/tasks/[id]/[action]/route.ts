@@ -191,7 +191,7 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
         if (task.picId !== session.user.userId) {
           return NextResponse.json({ error: "Only the person in charge (PIC) can mark task complete" }, { status: 403 });
         }
-        if (task.source.team.approvalRequired) {
+        if (task.reviewRequired) {
           return NextResponse.json({ error: "This task requires approval workflow" }, { status: 400 });
         }
 
@@ -236,7 +236,7 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
         if (task.status !== "IN_PROGRESS") {
           return NextResponse.json({ error: "Task must be IN_PROGRESS" }, { status: 400 });
         }
-        if (!task.source.team.approvalRequired) {
+        if (!task.reviewRequired) {
           return NextResponse.json({ error: "This task does not require approval" }, { status: 400 });
         }
 
