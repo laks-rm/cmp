@@ -5,8 +5,8 @@ const cspDirectives = isDevelopment
   ? [
       "default-src 'self'",
       "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
-      "font-src 'self' fonts.gstatic.com data:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: blob:",
       "connect-src 'self' ws: wss:",
       "worker-src 'self' blob:",
@@ -14,8 +14,8 @@ const cspDirectives = isDevelopment
   : [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
-      "font-src 'self' fonts.gstatic.com data:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: blob:",
       "connect-src 'self'",
     ].join("; ");
