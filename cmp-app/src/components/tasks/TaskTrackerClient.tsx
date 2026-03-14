@@ -27,6 +27,8 @@ import {
   ArrowRight,
   User,
   UserCheck,
+  ChevronUp,
+  SlidersHorizontal,
 } from "lucide-react";
 import toast from "@/lib/toast";
 import { format, isPast } from "date-fns";
@@ -238,7 +240,12 @@ export function TaskTrackerClient() {
     quarter: "",
     frequency: "",
     entity: "",
+    status: "",
+    riskRating: "",
+    dueDateFrom: "",
+    dueDateTo: "",
   });
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -266,6 +273,12 @@ export function TaskTrackerClient() {
       if (filters.entity) {
         params.set("entityId", filters.entity);
       }
+      if (filters.status) {
+        params.set("status", filters.status);
+      }
+      if (filters.riskRating) {
+        params.set("riskRating", filters.riskRating);
+      }
       if (sourceIdParam) {
         params.set("sourceId", sourceIdParam);
       }
@@ -284,8 +297,22 @@ export function TaskTrackerClient() {
 
       const res = await fetch(`/api/tasks?${params.toString()}`);
       const data = await res.json();
-      setTasks(data.tasks || []);
-      setTotal(data.pagination?.total || 0);
+      
+      let filteredTasks = data.tasks || [];
+      
+      // Client-side date range filtering
+      if (filters.dueDateFrom || filters.dueDateTo) {
+        filteredTasks = filteredTasks.filter((task: Task) => {
+          if (!task.dueDate) return false;
+          const taskDate = new Date(task.dueDate);
+          if (filters.dueDateFrom && taskDate < new Date(filters.dueDateFrom)) return false;
+          if (filters.dueDateTo && taskDate > new Date(filters.dueDateTo)) return false;
+          return true;
+        });
+      }
+      
+      setTasks(filteredTasks);
+      setTotal(filters.dueDateFrom || filters.dueDateTo ? filteredTasks.length : data.pagination?.total || 0);
     } catch (error) {
       console.error("Failed to fetch tasks:", error);
       toast.error("Failed to load tasks");
@@ -477,6 +504,17 @@ export function TaskTrackerClient() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            className={`flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-all ${
+              showAdvancedFilters ? "border-[var(--blue)] bg-[var(--blue-light)] text-[var(--blue)]" : "border-[var(--border)] bg-white text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
+            }`}
+          >
+            <SlidersHorizontal size={16} />
+            Filters
+            {showAdvancedFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+
           <div className="relative">
             <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-muted)" }} />
             <input
@@ -519,6 +557,101 @@ export function TaskTrackerClient() {
           </div>
         </div>
       </div>
+
+      {/* Advanced Filters Panel */}
+      {showAdvancedFilters && (
+        <div className="rounded-lg border bg-white p-4 space-y-4" style={{ borderColor: "var(--border)" }}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Status Filter */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                Status
+              </label>
+              <select
+                value={filters.status}
+                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              >
+                <option value="">All Statuses</option>
+                <option value="TO_DO">To Do</option>
+                <option value="IN_PROGRESS">In Progress</option>
+                <option value="PENDING_REVIEW">Pending Review</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="DEFERRED">Deferred</option>
+                <option value="NOT_APPLICABLE">Not Applicable</option>
+              </select>
+            </div>
+
+            {/* Risk Rating Filter */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                Risk Rating
+              </label>
+              <select
+                value={filters.riskRating}
+                onChange={(e) => setFilters({ ...filters, riskRating: e.target.value })}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              >
+                <option value="">All Risk Levels</option>
+                <option value="HIGH">High</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="LOW">Low</option>
+              </select>
+            </div>
+
+            {/* Due Date From */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                Due Date From
+              </label>
+              <input
+                type="date"
+                value={filters.dueDateFrom}
+                onChange={(e) => setFilters({ ...filters, dueDateFrom: e.target.value })}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              />
+            </div>
+
+            {/* Due Date To */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                Due Date To
+              </label>
+              <input
+                type="date"
+                value={filters.dueDateTo}
+                onChange={(e) => setFilters({ ...filters, dueDateTo: e.target.value })}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              />
+            </div>
+          </div>
+
+          {/* Clear Filters Button */}
+          <div className="flex justify-end">
+            <button
+              onClick={() => setFilters({ 
+                preset: "all", 
+                quarter: "", 
+                frequency: "", 
+                entity: "", 
+                status: "", 
+                riskRating: "", 
+                dueDateFrom: "", 
+                dueDateTo: "" 
+              })}
+              className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
+              style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+            >
+              <X size={14} />
+              Clear All Filters
+            </button>
+          </div>
+        </div>
+      )}
 
       {selectedIds.size > 0 && (
         <div className="flex items-center justify-between rounded-lg border p-3" style={{ backgroundColor: "var(--blue-light)", borderColor: "var(--blue)" }}>
