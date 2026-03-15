@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, CheckSquare, FileText, AlertTriangle, BarChart3, Clock, Settings, ChevronDown, Globe } from "lucide-react";
+import { LayoutDashboard, BookOpen, CheckSquare, Calendar, FileText, AlertTriangle, BarChart3, Clock, Settings, ChevronDown, Globe, AlertOctagon, type LucideIcon } from "lucide-react";
 import { useEntity } from "@/contexts/EntityContext";
 
 type SidebarProps = {
@@ -20,14 +20,25 @@ type SidebarProps = {
   allowedHrefs?: string[];
 };
 
-const NAV_ITEMS = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  section: string;
+  badge?: number;
+  superAdminOnly?: boolean;
+};
+
+const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Overview", icon: LayoutDashboard, section: "main" },
   { href: "/sources", label: "Sources", icon: BookOpen, section: "manage" },
   { href: "/tasks", label: "Task Tracker", icon: CheckSquare, section: "manage" },
+  { href: "/calendar", label: "Calendar", icon: Calendar, section: "manage" },
   { href: "/reviews", label: "Review Queue", icon: FileText, section: "manage", badge: 0 },
   { href: "/findings", label: "Findings", icon: AlertTriangle, section: "manage", badge: 0 },
   { href: "/reports", label: "Reports", icon: BarChart3, section: "insights" },
   { href: "/audit-log", label: "Audit Log", icon: Clock, section: "insights" },
+  { href: "/admin/error-logs", label: "Error Logs", icon: AlertOctagon, section: "insights", superAdminOnly: true },
   { href: "/admin", label: "Admin", icon: Settings, section: "settings" },
 ];
 
@@ -44,7 +55,19 @@ export function Sidebar({ user, entities, teams, allowedHrefs }: SidebarProps) {
   const [isEntityOpen, setIsEntityOpen] = useState(false);
   const [isTeamOpen, setIsTeamOpen] = useState(false);
 
-  const visibleItems = allowedHrefs ? NAV_ITEMS.filter((item) => allowedHrefs.includes(item.href)) : NAV_ITEMS;
+  const visibleItems = allowedHrefs 
+    ? NAV_ITEMS.filter((item) => {
+        // Filter by allowed hrefs
+        if (!allowedHrefs.includes(item.href)) return false;
+        // Filter super admin only items
+        if (item.superAdminOnly && user.roleName !== "SUPER_ADMIN") return false;
+        return true;
+      })
+    : NAV_ITEMS.filter((item) => {
+        // Filter super admin only items
+        if (item.superAdminOnly && user.roleName !== "SUPER_ADMIN") return false;
+        return true;
+      });
 
   const selectedEntity = entities.find((e) => e.id === selectedEntityId);
   const selectedTeam = teams.find((t) => t.id === selectedTeamId);

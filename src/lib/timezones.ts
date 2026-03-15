@@ -1,0 +1,16 @@
+export const COMMON_TIMEZONES = [
+  { value: "UTC", label: "UTC (Coordinated Universal Time)" },
+  { value: "Europe/London", label: "Europe/London (GMT/BST)" },
+  { value: "Europe/Paris", label: "Europe/Paris (CET/CEST)" },
+  { value: "Europe/Berlin", label: "Europe/Berlin (CET/CEST)" },
+  { value: "Europe/Malta", label: "Europe/Malta (CET/CEST)" },
+  { value: "Asia/Dubai", label: "Asia/Dubai (GST)" },
+  { value: "Asia/Singapore", label: "Asia/Singapore (SGT)" },
+  { value: "Asia/Hong_Kong", label: "Asia/Hong Kong (HKT)" },
+  { value: "Asia/Tokyo", label: "Asia/Tokyo (JST)" },
+  { value: "Australia/Sydney", label: "Australia/Sydney (AEDT/AEST)" },
+  { value: "America/New_York", label: "America/New York (EST/EDT)" },
+  { value: "America/Chicago", label: "America/Chicago (CST/CDT)" },
+  { value: "America/Los_Angeles", label: "America/Los Angeles (PST/PDT)" },
+  { value: "Africa/Johannesburg", label: "Africa/Johannesburg (SAST)" },
+];

@@ -12,7 +12,8 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const requestedLimit = parseInt(searchParams.get("limit") || "50");
+    const limit = Math.min(requestedLimit, 100); // Cap at 100 to prevent resource exhaustion
     const unreadOnly = searchParams.get("unreadOnly") === "true";
 
     const where: Record<string, unknown> = {

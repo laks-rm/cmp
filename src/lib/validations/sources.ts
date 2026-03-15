@@ -12,12 +12,12 @@ export const createSourceSchema = z.object({
     "CONTRACTUAL_OBLIGATION",
     "REGULATORY_GUIDANCE",
   ]),
-  issuingAuthorityId: z.string().uuid().optional().nullable(),
-  effectiveDate: z.string().optional(),
-  reviewDate: z.string().optional(),
+  issuingAuthorityId: z.string().uuid().optional().nullable().or(z.literal("")),
+  effectiveDate: z.string().optional().nullable().or(z.literal("")),
+  reviewDate: z.string().optional().nullable().or(z.literal("")),
   teamId: z.string().uuid(),
   entityIds: z.array(z.string().uuid()).min(1),
-  defaultFrequency: z.enum(["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL", "BIENNIAL", "ONE_TIME"]).optional(),
+  defaultFrequency: z.enum(["ADHOC", "DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL", "BIENNIAL", "ONE_TIME"]).optional(),
 });
 
 export const updateSourceSchema = createSourceSchema.partial().extend({
@@ -29,7 +29,7 @@ export const createSourceItemSchema = z.object({
   reference: z.string().min(1).max(100).trim(),
   title: z.string().min(1).max(255).trim(),
   description: z.string().max(2000).trim().optional(),
-  parentId: z.string().uuid().optional(),
+  parentId: z.string().uuid().optional().or(z.literal("")),
   sortOrder: z.number().int().default(0),
 });
 
@@ -40,12 +40,13 @@ export const createTaskForSourceSchema = z.object({
   description: z.string().max(5000).trim().optional(),
   expectedOutcome: z.string().max(2000).trim().optional(),
   entityId: z.string().uuid(),
-  frequency: z.enum(["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL", "BIENNIAL", "ONE_TIME"]),
+  frequency: z.enum(["ADHOC", "DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL", "BIENNIAL", "ONE_TIME"]),
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]).optional(),
   riskRating: z.enum(["HIGH", "MEDIUM", "LOW"]),
-  assigneeId: z.string().uuid().optional(),
-  picId: z.string().uuid().optional(),
-  reviewerId: z.string().uuid().optional(),
+  assigneeId: z.string().uuid().optional().or(z.literal("")),
+  responsibleTeamId: z.string().uuid().optional().or(z.literal("")),
+  picId: z.string().uuid().optional().or(z.literal("")),
+  reviewerId: z.string().uuid().optional().or(z.literal("")),
   startDate: z.string().optional(),
   dueDate: z.string().optional(),
   testingPeriodStart: z.string().optional(),

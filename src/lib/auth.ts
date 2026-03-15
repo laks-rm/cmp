@@ -22,6 +22,7 @@ type AuthUser = {
   roleName: string;
   entityIds: string[];
   teamIds: string[];
+  timezone: string;
 };
 
 function getProviders() {
@@ -108,6 +109,7 @@ function getProviders() {
           roleName: user.role.name,
           entityIds: user.entityAccess.map((access) => access.entityId),
           teamIds: user.teamMemberships.map((membership) => membership.teamId),
+          timezone: user.timezone,
         };
       },
     }),
@@ -139,6 +141,7 @@ export const authOptions: NextAuthOptions = {
         token.roleName = authUser.roleName;
         token.entityIds = authUser.entityIds;
         token.teamIds = authUser.teamIds;
+        token.timezone = authUser.timezone;
         token.lastRefreshAt = Date.now();
       }
 
@@ -157,16 +160,13 @@ export const authOptions: NextAuthOptions = {
             action: "AUTH_SESSION_EXPIRED",
             module: "AUTH",
             userId: token.userId,
+            details: {
+              reason: !dbUser ? "user_deleted" : "user_deactivated",
+            },
           });
-          token.userId = "";
-          token.email = "";
-          token.name = "";
-          token.initials = "";
-          token.roleId = "";
-          token.roleName = "";
-          token.entityIds = [];
-          token.teamIds = [];
-          return token;
+          
+          // Force session termination by throwing error
+          throw new Error("User account is no longer active");
         }
 
         token.email = dbUser.email;
@@ -176,14 +176,16 @@ export const authOptions: NextAuthOptions = {
         token.roleName = dbUser.role.name;
         token.entityIds = dbUser.entityAccess.map((access) => access.entityId);
         token.teamIds = dbUser.teamMemberships.map((membership) => membership.teamId);
+        token.timezone = dbUser.timezone;
         token.lastRefreshAt = Date.now();
       }
 
       return token;
     },
     async session({ session, token }) {
-      if (!token?.userId) {
-        return session;
+      // If token is invalid or user cleared, force logout
+      if (!token?.userId || typeof token.userId !== 'string' || token.userId === "") {
+        return null;
       }
 
       session.user = {
@@ -196,6 +198,7 @@ export const authOptions: NextAuthOptions = {
         roleName: token.roleName,
         entityIds: token.entityIds ?? [],
         teamIds: token.teamIds ?? [],
+        timezone: token.timezone ?? "UTC",
       };
       return session;
     },

@@ -7,6 +7,7 @@ import { uploadEvidenceSchema } from "@/lib/validations/evidence";
 import { StorageServiceFactory } from "@/lib/storage";
 import { logAuditEvent } from "@/lib/audit";
 import { ApiError } from "@/lib/errors";
+import { acquireConcurrentSlot, createConcurrentLimitResponse } from "@/lib/concurrentLimit";
 
 const storageService = StorageServiceFactory.getInstance();
 
@@ -57,10 +58,24 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  let releaseSlot: (() => void) | undefined;
+  
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Acquire concurrent request slot (file uploads are resource-intensive)
+    releaseSlot = await acquireConcurrentSlot(session.user.userId, {
+      maxConcurrent: 5, // Low limit for file uploads
+      errorMessage: "Too many file uploads in progress. Please wait for current uploads to complete.",
+    });
+    
+    if (!releaseSlot) {
+      return createConcurrentLimitResponse(
+        "Too many file uploads in progress. Please wait for current uploads to complete."
+      );
     }
 
     await requirePermission(session, "TASK_EXECUTION", "EDIT");
@@ -86,6 +101,38 @@ export async function POST(req: NextRequest) {
       fileSize: file.size,
       mimeType: file.type,
     });
+
+    // Verify entity access for task
+    if (validatedData.taskId) {
+      const task = await prisma.task.findUnique({
+        where: { id: validatedData.taskId },
+        select: { entityId: true },
+      });
+
+      if (!task) {
+        return NextResponse.json({ error: "Task not found" }, { status: 404 });
+      }
+
+      if (!session.user.entityIds.includes(task.entityId)) {
+        return NextResponse.json({ error: "Access denied to this task" }, { status: 403 });
+      }
+    }
+
+    // Verify entity access for finding
+    if (validatedData.findingId) {
+      const finding = await prisma.finding.findUnique({
+        where: { id: validatedData.findingId },
+        select: { entityId: true },
+      });
+
+      if (!finding) {
+        return NextResponse.json({ error: "Finding not found" }, { status: 404 });
+      }
+
+      if (!session.user.entityIds.includes(finding.entityId)) {
+        return NextResponse.json({ error: "Access denied to this finding" }, { status: 403 });
+      }
+    }
 
     // Convert file to buffer
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -138,6 +185,9 @@ export async function POST(req: NextRequest) {
     }
     console.error("Evidence upload error:", error);
     return NextResponse.json({ error: "Failed to upload evidence" }, { status: 500 });
+  } finally {
+    // CRITICAL: Always release concurrent slot
+    releaseSlot?.();
   }
 }
 
@@ -159,19 +209,40 @@ export async function DELETE(req: NextRequest) {
 
     const evidence = await prisma.evidence.findUnique({
       where: { id: evidenceId },
+      include: {
+        task: {
+          select: { entityId: true },
+        },
+        finding: {
+          select: { entityId: true },
+        },
+      },
     });
 
     if (!evidence) {
       return NextResponse.json({ error: "Evidence not found" }, { status: 404 });
     }
 
-    // Delete file from storage
-    await storageService.delete(evidence.fileUrl);
+    // Verify entity access
+    const entityId = evidence.task?.entityId || evidence.finding?.entityId;
+    if (entityId && !session.user.entityIds.includes(entityId)) {
+      return NextResponse.json({ error: "Access denied to this evidence" }, { status: 403 });
+    }
 
-    // Delete evidence record
+    // Delete database record FIRST
     await prisma.evidence.delete({
       where: { id: evidenceId },
     });
+
+    // Then delete file (if this fails, at least DB is clean)
+    try {
+      await storageService.delete(evidence.fileUrl);
+    } catch (error) {
+      console.error('Failed to delete evidence file:', error, {
+        evidenceId,
+        fileUrl: evidence.fileUrl,
+      });
+    }
 
     // Audit log
     await logAuditEvent({

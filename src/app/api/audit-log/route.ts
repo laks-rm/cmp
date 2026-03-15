@@ -24,7 +24,8 @@ export async function GET(req: NextRequest) {
     const dateFrom = searchParams.get("dateFrom");
     const dateTo = searchParams.get("dateTo");
     const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const requestedLimit = parseInt(searchParams.get("limit") || "50");
+    const limit = Math.min(requestedLimit, 200); // Cap at 200 for audit logs (admin use case)
     const exportFormat = searchParams.get("export");
 
     const where: Record<string, unknown> = {};

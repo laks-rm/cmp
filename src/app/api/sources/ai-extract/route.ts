@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+// @ts-expect-error - pdf-parse has incorrect type definitions
 import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
+import { acquireConcurrentSlot, createConcurrentLimitResponse } from "@/lib/concurrentLimit";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || "",
 });
+
+// Content limits and cost constants
+const MAX_DOCUMENT_CHARS = 50000; // ~12,500 tokens (safe limit for Claude)
+const CHARS_PER_TOKEN_ESTIMATE = 4; // Conservative estimate
+const COST_PER_1K_INPUT_TOKENS = 0.003; // Claude Sonnet 3.5 pricing (as of 2024)
+const COST_PER_1K_OUTPUT_TOKENS = 0.015; // Claude Sonnet 3.5 pricing
 
 type ExtractedClause = {
   reference: string;
@@ -106,6 +114,10 @@ function buildExtractionPrompt(
     ? `\n\nAdditional instructions from user:\n${additionalInstructions}`
     : "";
 
+  // Truncate document if needed (should not happen after validation, but safety check)
+  const truncatedText = documentText.slice(0, MAX_DOCUMENT_CHARS);
+  const wasTruncated = documentText.length > MAX_DOCUMENT_CHARS;
+
   return `You are a regulatory compliance expert extracting clauses from a compliance document for a compliance monitoring program.
 
 Document type: ${sourceType}
@@ -117,7 +129,7 @@ ${levelInstructions}
 Task suggestion instructions:
 ${taskInstructions}
 
-${additionalContext}
+${additionalContext}${wasTruncated ? '\n\nNOTE: Document was truncated to fit token limits. Extract what is available.' : ''}
 
 IMPORTANT: Return ONLY valid JSON in the following exact format, with no additional text or markdown:
 {
@@ -151,11 +163,28 @@ Focus on extracting clauses that require monitoring, compliance actions, or ongo
 
 Here is the document text to analyze:
 
-${documentText.slice(0, 100000)}`;
+${truncatedText}`;
 }
 
 export async function POST(req: NextRequest) {
+  let releaseSlot: (() => void) | undefined;
+  
   try {
+    // CRITICAL: AI extraction is expensive and resource-intensive
+    // Use a very low concurrent limit (2) to prevent API rate limits and cost overruns
+    const userId = req.headers.get("x-user-id") || "anonymous"; // Fallback for unauthenticated requests
+    
+    releaseSlot = await acquireConcurrentSlot(userId, {
+      maxConcurrent: 2, // Very low limit for AI processing
+      errorMessage: "AI extraction is already in progress. Please wait for the current extraction to complete.",
+    });
+    
+    if (!releaseSlot) {
+      return createConcurrentLimitResponse(
+        "AI extraction is already in progress. Please wait for the current extraction to complete."
+      );
+    }
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const extractionLevel =
@@ -215,6 +244,38 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Validate document size and calculate estimated cost
+    const documentChars = documentText.length;
+    const estimatedInputTokens = Math.ceil(documentChars / CHARS_PER_TOKEN_ESTIMATE);
+    const estimatedOutputTokens = 2000; // Conservative estimate for extraction output
+    const estimatedCost = 
+      (estimatedInputTokens / 1000) * COST_PER_1K_INPUT_TOKENS +
+      (estimatedOutputTokens / 1000) * COST_PER_1K_OUTPUT_TOKENS;
+
+    if (documentChars > MAX_DOCUMENT_CHARS) {
+      return NextResponse.json(
+        {
+          error: `Document too large. Maximum ${MAX_DOCUMENT_CHARS.toLocaleString()} characters allowed.`,
+          details: {
+            documentChars,
+            maxChars: MAX_DOCUMENT_CHARS,
+            exceedsBy: documentChars - MAX_DOCUMENT_CHARS,
+            estimatedTokens: estimatedInputTokens,
+            estimatedCost: `$${estimatedCost.toFixed(3)}`,
+            suggestion: "Please split the document into smaller sections or extract specific portions manually.",
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log('AI extraction starting:', {
+      fileName: file.name,
+      documentChars,
+      estimatedInputTokens,
+      estimatedCost: `$${estimatedCost.toFixed(3)}`,
+    });
+
     const prompt = buildExtractionPrompt(
       documentText,
       extractionLevel,
@@ -223,9 +284,10 @@ export async function POST(req: NextRequest) {
       additionalInstructions || undefined
     );
 
-    let extractedData: ExtractionResponse;
+    let extractedData: ExtractionResponse | undefined;
     let retryCount = 0;
     const maxRetries = 2;
+    let lastMessage: Anthropic.Messages.Message | undefined;
 
     while (retryCount <= maxRetries) {
       try {
@@ -239,6 +301,8 @@ export async function POST(req: NextRequest) {
             },
           ],
         });
+
+        lastMessage = message;
 
         const responseText =
           message.content[0].type === "text" ? message.content[0].text : "";
@@ -268,7 +332,7 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        if (retryCount <= maxRetries) {
+        if (retryCount <= maxRetries && lastMessage) {
           const correctionPrompt = `The previous response was not valid JSON. Please return ONLY a valid JSON object with this exact structure, with no markdown formatting or extra text:
 {
   "clauses": [
@@ -298,8 +362,8 @@ Please retry the extraction now.`;
               {
                 role: "assistant",
                 content:
-                  message.content[0].type === "text"
-                    ? message.content[0].text
+                  lastMessage.content[0].type === "text"
+                    ? lastMessage.content[0].text
                     : "",
               },
               { role: "user", content: correctionPrompt },
@@ -322,9 +386,19 @@ Please retry the extraction now.`;
           ) {
             continue;
           }
+          lastMessage = retryMessage;
           break;
         }
       }
+    }
+
+    if (!extractedData) {
+      return NextResponse.json(
+        {
+          error: "Failed to extract data from document after all retries",
+        },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
@@ -351,5 +425,8 @@ Please retry the extraction now.`;
       },
       { status: 500 }
     );
+  } finally {
+    // CRITICAL: Always release concurrent slot
+    releaseSlot?.();
   }
 }

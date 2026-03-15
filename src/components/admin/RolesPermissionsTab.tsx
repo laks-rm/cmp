@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus, Check, X, Minus, Save } from "lucide-react";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type Role = {
   id: string;
@@ -73,11 +73,7 @@ export function RolesPermissionsTab() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
 
-  useEffect(() => {
-    fetchRoles();
-  }, []);
-
-  const fetchRoles = async () => {
+  const fetchRoles = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch("/api/admin/roles");
@@ -93,7 +89,11 @@ export function RolesPermissionsTab() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedRoleId]);
+
+  useEffect(() => {
+    fetchRoles();
+  }, [fetchRoles]);
 
   const selectedRole = roles.find((r) => r.id === selectedRoleId);
 

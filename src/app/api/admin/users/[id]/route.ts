@@ -16,6 +16,7 @@ const updateUserSchema = z.object({
   teamIds: z.array(z.string().uuid()).optional(),
   entityIds: z.array(z.string().uuid()).optional(),
   isActive: z.boolean().optional(),
+  timezone: z.string().max(100).optional(),
 });
 
 export async function PATCH(req: NextRequest, context: { params: { id: string } }) {
@@ -58,6 +59,7 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
       updateData.passwordHash = await bcrypt.hash(validatedData.password, 12);
     }
     if (validatedData.roleId) updateData.roleId = validatedData.roleId;
+    if (validatedData.timezone) updateData.timezone = validatedData.timezone;
     if (validatedData.isActive !== undefined) updateData.isActive = validatedData.isActive;
 
     // Update user in a transaction with team memberships and entity access

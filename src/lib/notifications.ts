@@ -11,14 +11,49 @@ type NotificationType =
   | "SOURCE_GENERATED"
   | "COMMENT_ADDED";
 
+type EntityType = "Task" | "Finding" | "Source";
+
+const DEDUPLICATION_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
 export async function createNotification(
   type: NotificationType,
   recipientId: string,
   title: string,
   message: string,
-  linkUrl?: string
+  linkUrl?: string,
+  entityType?: EntityType,
+  entityId?: string
 ): Promise<void> {
   try {
+    // Check for recent duplicate notification
+    if (entityType && entityId) {
+      const recentDuplicate = await prisma.notification.findFirst({
+        where: {
+          userId: recipientId,
+          type,
+          entityType,
+          entityId,
+          createdAt: {
+            gte: new Date(Date.now() - DEDUPLICATION_WINDOW_MS),
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+
+      if (recentDuplicate) {
+        console.log("Skipping duplicate notification:", {
+          type,
+          recipientId,
+          entityType,
+          entityId,
+          existingNotificationAge: Date.now() - recentDuplicate.createdAt.getTime(),
+        });
+        return;
+      }
+    }
+
     await prisma.notification.create({
       data: {
         type,
@@ -26,11 +61,12 @@ export async function createNotification(
         message,
         userId: recipientId,
         linkUrl: linkUrl || null,
+        entityType: entityType || null,
+        entityId: entityId || null,
         isRead: false,
       },
     });
   } catch (error) {
-    // Never throw - notifications should never break the main flow
     console.error("Failed to create notification:", error);
   }
 }
@@ -41,24 +77,28 @@ export async function notifyTaskSubmitted(taskId: string, taskName: string, revi
     reviewerId,
     "Task Submitted for Review",
     `${assigneeName} submitted "${taskName}" for your review`,
-    `/tasks/${taskId}`
+    `/tasks/${taskId}`,
+    "Task",
+    taskId
   );
 }
 
-export async function notifyTaskApproved(taskId: string, taskName: string, assigneeId: string, reviewerName: string): Promise<void> {
+export async function notifyTaskApproved(taskId: string, taskName: string, picId: string, reviewerName: string): Promise<void> {
   await createNotification(
     "TASK_APPROVED",
-    assigneeId,
+    picId,
     "Task Approved",
     `${reviewerName} approved your task "${taskName}"`,
-    `/tasks/${taskId}`
+    `/tasks/${taskId}`,
+    "Task",
+    taskId
   );
 }
 
 export async function notifyTaskRejected(
   taskId: string,
   taskName: string,
-  assigneeId: string,
+  picId: string,
   reviewerName: string,
   reason?: string
 ): Promise<void> {
@@ -68,20 +108,24 @@ export async function notifyTaskRejected(
 
   await createNotification(
     "TASK_REJECTED",
-    assigneeId,
+    picId,
     "Changes Requested",
     message,
-    `/tasks/${taskId}`
+    `/tasks/${taskId}`,
+    "Task",
+    taskId
   );
 }
 
-export async function notifyTaskAssigned(taskId: string, taskName: string, assigneeId: string, entityName: string): Promise<void> {
+export async function notifyTaskAssigned(taskId: string, taskName: string, picId: string, entityName: string): Promise<void> {
   await createNotification(
     "TASK_ASSIGNED",
-    assigneeId,
+    picId,
     "Task Assigned",
     `You've been assigned to task "${taskName}" for ${entityName}`,
-    `/tasks/${taskId}`
+    `/tasks/${taskId}`,
+    "Task",
+    taskId
   );
 }
 
@@ -99,7 +143,9 @@ export async function notifyTaskOverdue(
       recipientId,
       "Task Overdue",
       message,
-      `/tasks/${taskId}`
+      `/tasks/${taskId}`,
+      "Task",
+      taskId
     );
   }
 }
@@ -116,7 +162,9 @@ export async function notifyFindingCreated(
     actionOwnerId,
     "New Finding Assigned",
     `${raiserName} raised finding ${findingRef}: ${findingTitle}`,
-    `/findings/${findingId}`
+    `/findings/${findingId}`,
+    "Finding",
+    findingId
   );
 }
 
@@ -135,7 +183,9 @@ export async function notifyFindingOverdue(
       recipientId,
       "Finding Overdue",
       message,
-      `/findings/${findingId}`
+      `/findings/${findingId}`,
+      "Finding",
+      findingId
     );
   }
 }
@@ -154,7 +204,9 @@ export async function notifySourceGenerated(
       memberId,
       "New Source Available",
       message,
-      `/sources?sourceId=${sourceId}`
+      `/sources?sourceId=${sourceId}`,
+      "Source",
+      sourceId
     );
   }
 }
@@ -170,3 +222,29 @@ export async function notifySourceGenerated(
 // - Create Slack message formatter for each notification type
 // - Add user preference: slackUserId field for @mentions
 // - Implement retry logic for failed webhook calls
+
+/**
+ * Clean up old read notifications to prevent database bloat
+ * Should be called periodically via cron job
+ * @param olderThanDays - Delete notifications older than this many days (default: 30)
+ * @returns Number of notifications deleted
+ */
+export async function cleanupOldNotifications(olderThanDays: number = 30): Promise<number> {
+  try {
+    const cutoffDate = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
+
+    const result = await prisma.notification.deleteMany({
+      where: {
+        isRead: true,
+        createdAt: {
+          lt: cutoffDate,
+        },
+      },
+    });
+
+    return result.count;
+  } catch (error) {
+    console.error("Failed to cleanup old notifications:", error);
+    return 0;
+  }
+}

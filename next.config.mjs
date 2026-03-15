@@ -5,18 +5,18 @@ const cspDirectives = isDevelopment
   ? [
       "default-src 'self'",
       "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
-      "font-src 'self' fonts.gstatic.com data:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: blob:",
       "connect-src 'self' ws: wss:",
       "worker-src 'self' blob:",
     ].join("; ")
   : [
       "default-src 'self'",
-      "script-src 'self'",
-      "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
-      "font-src 'self' fonts.gstatic.com",
-      "img-src 'self' data:",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: blob:",
       "connect-src 'self'",
     ].join("; ");
 
@@ -36,8 +36,7 @@ if (!isDevelopment) {
 const nextConfig = {
   output: "standalone",
   typescript: {
-    // Temporarily ignore build errors due to stack overflow with complex types
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   async headers() {
     return [
@@ -46,6 +45,14 @@ const nextConfig = {
         headers: securityHeaders,
       },
     ];
+  },
+  // API route configuration
+  experimental: {
+    // Configure API body size limits to prevent DoS attacks
+    // Evidence uploads are handled via streaming, so API routes should have reasonable limits
+    serverActions: {
+      bodySizeLimit: '2mb', // Limit for server actions
+    },
   },
 };
 

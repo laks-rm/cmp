@@ -16,6 +16,7 @@ const NAV_PERMISSION_MAP: Array<{ href: string; module: string; action: string }
   { href: "/findings", module: "FINDINGS", action: "VIEW" },
   { href: "/reports", module: "REPORTS", action: "VIEW" },
   { href: "/audit-log", module: "AUDIT_LOG", action: "VIEW" },
+  { href: "/admin/error-logs", module: "SYSTEM_MONITORING", action: "VIEW" },
   { href: "/admin", module: "USER_MANAGEMENT", action: "VIEW" },
 ];
 

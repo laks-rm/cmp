@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/permissions";
 import { logAuditEvent } from "@/lib/audit";
 import { ApiError } from "@/lib/errors";
+import { generateInitials } from "@/lib/utils";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -15,6 +16,7 @@ const createUserSchema = z.object({
   roleId: z.string().uuid(),
   teamIds: z.array(z.string().uuid()),
   entityIds: z.array(z.string().uuid()).min(1, "At least one entity required"),
+  timezone: z.string().max(100).default("UTC"),
 });
 
 export async function GET() {
@@ -94,12 +96,8 @@ export async function POST(req: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(validatedData.password, 12);
 
-    // Generate initials
-    const nameParts = validatedData.name.trim().split(" ");
-    const initials =
-      nameParts.length > 1
-        ? nameParts[0][0] + nameParts[nameParts.length - 1][0]
-        : nameParts[0].substring(0, 2);
+    // Generate initials with robust error handling
+    const initials = generateInitials(validatedData.name);
 
     // Create user with team memberships and entity access
     const user = await prisma.user.create({
@@ -107,8 +105,9 @@ export async function POST(req: NextRequest) {
         name: validatedData.name,
         email: validatedData.email,
         passwordHash,
-        initials: initials.toUpperCase(),
+        initials,
         roleId: validatedData.roleId,
+        timezone: validatedData.timezone,
         isActive: true,
         teamMemberships: {
           create: validatedData.teamIds.map((teamId) => ({

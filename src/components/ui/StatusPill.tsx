@@ -1,8 +1,9 @@
 type StatusPillProps = {
-  status: "TO_DO" | "IN_PROGRESS" | "PENDING_REVIEW" | "COMPLETED" | "DEFERRED" | "NOT_APPLICABLE" | "OVERDUE";
+  status: "PLANNED" | "TO_DO" | "IN_PROGRESS" | "PENDING_REVIEW" | "COMPLETED" | "DEFERRED" | "NOT_APPLICABLE" | "OVERDUE";
 };
 
 const STATUS_CONFIG = {
+  PLANNED: { label: "Planned", bg: "#E8EAED", color: "#5F6368", dot: "#9AA0A6" },
   TO_DO: { label: "To Do", bg: "#F1F3F8", color: "#7C849B", dot: "#A0A7BE" },
   IN_PROGRESS: { label: "In Progress", bg: "var(--blue-light)", color: "var(--blue)", dot: "var(--blue)" },
   PENDING_REVIEW: { label: "Pending Review", bg: "var(--amber-light)", color: "var(--amber)", dot: "var(--amber)" },

@@ -5,34 +5,21 @@ import { logAuditEvent } from "@/lib/audit";
 
 type PermissionKey = `${string}:${string}`;
 
-const permissionCache = new Map<string, Set<PermissionKey>>();
-
 function buildPermissionKey(module: string, action: string): PermissionKey {
   return `${module}:${action}`;
 }
 
 async function loadRolePermissions(roleId: string): Promise<Set<PermissionKey>> {
-  const cached = permissionCache.get(roleId);
-  if (cached) {
-    return cached;
-  }
-
   const records = await prisma.rolePermission.findMany({
     where: { roleId, granted: true },
     include: { permission: true },
   });
 
-  const set = new Set<PermissionKey>(records.map((record) => buildPermissionKey(record.permission.module, record.permission.action)));
-  permissionCache.set(roleId, set);
-  return set;
-}
-
-export function invalidateRolePermissionCache(roleId?: string): void {
-  if (roleId) {
-    permissionCache.delete(roleId);
-    return;
-  }
-  permissionCache.clear();
+  return new Set<PermissionKey>(
+    records.map((record) => 
+      buildPermissionKey(record.permission.module, record.permission.action)
+    )
+  );
 }
 
 export async function hasPermission(session: Session, module: string, action: string): Promise<boolean> {

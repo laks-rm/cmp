@@ -1,29 +1,47 @@
 "use client";
 
 import { Component, ReactNode } from "react";
+import { ErrorDisplay } from "@/components/ui/ErrorDisplay";
+import { logComponentError } from "@/lib/errorLogger";
 
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
+  componentName?: string;
 }
 
 interface State {
   hasError: boolean;
   error: Error | null;
+  errorId: string | null;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, errorId: null };
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+  async componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error("ErrorBoundary caught an error:", error, errorInfo);
+
+    // Log error to database
+    try {
+      const errorId = await logComponentError(
+        error,
+        this.props.componentName || "Unknown Component",
+        undefined // userId not available in class component
+      );
+      if (errorId) {
+        this.setState({ errorId });
+      }
+    } catch (loggingError) {
+      console.error("Failed to log component error:", loggingError);
+    }
   }
 
   render() {
@@ -33,27 +51,21 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: "var(--bg-primary)" }}>
-          <div className="w-full max-w-md rounded-[14px] border bg-white p-8 text-center shadow-md" style={{ borderColor: "var(--border)" }}>
-            <div className="mb-4 text-6xl">⚠️</div>
-            <h2 className="mb-2 text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-              Something went wrong
-            </h2>
-            <p className="mb-6 text-sm" style={{ color: "var(--text-secondary)" }}>
-              {this.state.error?.message || "An unexpected error occurred"}
-            </p>
-            <button
-              onClick={() => {
-                this.setState({ hasError: false, error: null });
-                window.location.reload();
-              }}
-              className="rounded-lg px-6 py-2 text-white transition-opacity hover:opacity-90"
-              style={{ backgroundColor: "var(--blue)" }}
-            >
-              Reload Page
-            </button>
-          </div>
-        </div>
+        <ErrorDisplay
+          variant="page"
+          title="Something went wrong"
+          message={this.state.error?.message || "An unexpected error occurred in this component"}
+          errorId={this.state.errorId || undefined}
+          showDetails={process.env.NODE_ENV === "development"}
+          errorDetails={this.state.error?.stack}
+          primaryAction={{
+            label: "Reload Page",
+            onClick: () => {
+              this.setState({ hasError: false, error: null, errorId: null });
+              window.location.reload();
+            },
+          }}
+        />
       );
     }
 

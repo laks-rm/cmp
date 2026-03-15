@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Bell, Mail, MessageSquare, CheckCircle, XCircle, Save } from "lucide-react";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type EventType = {
   id: string;

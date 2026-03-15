@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Bell, Check, FileText, AlertTriangle, CheckSquare, BookOpen, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { fetchApi, patch } from "@/lib/api-client";
 
 type Notification = {
   id: string;
@@ -67,10 +68,10 @@ export function NotificationBell() {
 
   const fetchNotifications = async () => {
     try {
-      const res = await fetch("/api/notifications?limit=20");
-      if (!res.ok) return;
-
-      const data = await res.json();
+      const data = await fetchApi<{ notifications: Notification[]; unreadCount: number }>(
+        "/api/notifications?limit=20",
+        { showErrorToast: false } // Silent polling
+      );
       setNotifications(data.notifications || []);
       setUnreadCount(data.unreadCount || 0);
     } catch (error) {
@@ -80,9 +81,7 @@ export function NotificationBell() {
 
   const handleMarkAsRead = async (notificationId: string, linkUrl: string | null) => {
     try {
-      await fetch(`/api/notifications/${notificationId}`, {
-        method: "PATCH",
-      });
+      await patch(`/api/notifications/${notificationId}`, undefined, { showErrorToast: false });
 
       setNotifications((prev) =>
         prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
@@ -101,11 +100,7 @@ export function NotificationBell() {
   const handleMarkAllAsRead = async () => {
     try {
       setLoading(true);
-      await fetch("/api/notifications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "mark-all-read" }),
-      });
+      await patch("/api/notifications", { action: "mark-all-read" }, { showErrorToast: false });
 
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);

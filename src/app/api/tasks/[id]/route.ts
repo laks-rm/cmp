@@ -36,6 +36,12 @@ export async function GET(req: NextRequest, context: { params: { id: string } })
             avatarColor: true,
           },
         },
+        responsibleTeam: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         pic: {
           select: {
             id: true,
@@ -79,7 +85,7 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    await requirePermission(session, "TASKS", "EDIT");
+    await requirePermission(session, "TASK_EXECUTION", "EDIT");
 
     const taskId = context.params.id;
     const body = await req.json();
@@ -98,13 +104,36 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    const updates: Record<string, unknown> = { ...data };
+    const updates: Record<string, unknown> = {};
+    
+    // Copy all fields from validated data, converting empty strings to null for UUID fields
+    if (data.name !== undefined) updates.name = data.name;
+    if (data.description !== undefined) updates.description = data.description;
+    if (data.expectedOutcome !== undefined) updates.expectedOutcome = data.expectedOutcome;
+    if (data.riskRating !== undefined) updates.riskRating = data.riskRating;
+    if (data.frequency !== undefined) updates.frequency = data.frequency;
+    if (data.quarter !== undefined) updates.quarter = data.quarter;
+    if (data.evidenceRequired !== undefined) updates.evidenceRequired = data.evidenceRequired;
+    if (data.narrativeRequired !== undefined) updates.narrativeRequired = data.narrativeRequired;
+    if (data.reviewRequired !== undefined) updates.reviewRequired = data.reviewRequired;
+    if (data.narrative !== undefined) updates.narrative = data.narrative;
+    if (data.clickupUrl !== undefined) updates.clickupUrl = data.clickupUrl;
+    if (data.gdriveUrl !== undefined) updates.gdriveUrl = data.gdriveUrl;
+    if (data.sourceId !== undefined) updates.sourceId = data.sourceId;
+    if (data.sourceItemId !== undefined) updates.sourceItemId = data.sourceItemId || null;
+    if (data.entityId !== undefined) updates.entityId = data.entityId;
+    if (data.assigneeId !== undefined) updates.assigneeId = data.assigneeId || null;
+    if (data.responsibleTeamId !== undefined) updates.responsibleTeamId = data.responsibleTeamId || null;
+    if (data.picId !== undefined) updates.picId = data.picId || null;
+    if (data.reviewerId !== undefined) updates.reviewerId = data.reviewerId || null;
 
     if (data.status && data.status !== existingTask.status) {
       const allowedStatuses = existingTask.source.team.statusFlow as string[];
       if (!allowedStatuses.includes(data.status)) {
         return NextResponse.json({ error: "Invalid status transition" }, { status: 400 });
       }
+
+      updates.status = data.status;
 
       if (data.status === "PENDING_REVIEW") {
         updates.submittedAt = new Date();
@@ -113,7 +142,7 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
             data: {
               type: "TASK_SUBMITTED",
               title: "Task Submitted for Review",
-              message: `Task "${existingTask.name}" has been submitted for your review`,
+              message: `Task "${existingTask.source.name}" has been submitted for your review`,
               userId: existingTask.reviewerId,
               linkUrl: `/tasks/${taskId}`,
             },
@@ -154,6 +183,21 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
       });
     }
 
+    if (data.picId && data.picId !== existingTask.picId) {
+      await logAuditEvent({
+        action: "TASK_PIC_CHANGED",
+        module: "TASKS",
+        userId: session.user.userId,
+        entityId: existingTask.entityId,
+        targetType: "Task",
+        targetId: taskId,
+        details: {
+          oldPicId: existingTask.picId,
+          newPicId: data.picId,
+        },
+      });
+    }
+
     if (data.dueDate) {
       updates.dueDate = new Date(data.dueDate);
     }
@@ -167,9 +211,28 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
       updates.testingPeriodEnd = new Date(data.testingPeriodEnd);
     }
 
-    const updatedTask = await prisma.task.update({
+    // Use optimistic locking with version field
+    const result = await prisma.task.updateMany({
+      where: {
+        id: taskId,
+        version: existingTask.version,
+      },
+      data: {
+        ...updates,
+        version: { increment: 1 },
+      },
+    });
+
+    if (result.count === 0) {
+      return NextResponse.json(
+        { error: "Task was modified by another user. Please refresh and try again." },
+        { status: 409 }
+      );
+    }
+
+    // Fetch the updated task to return
+    const updatedTask = await prisma.task.findUnique({
       where: { id: taskId },
-      data: updates,
       include: {
         source: {
           include: {
@@ -187,7 +250,7 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
       action: "TASK_UPDATED",
       module: "TASKS",
       userId: session.user.userId,
-      entityId: updatedTask.entityId,
+      entityId: existingTask.entityId,
       targetType: "Task",
       targetId: taskId,
     });

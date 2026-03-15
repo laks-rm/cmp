@@ -158,6 +158,9 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
 
     return NextResponse.json(updatedSource);
   } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+      return NextResponse.json({ error: "A source with this code already exists for this team" }, { status: 409 });
+    }
     if (error instanceof ApiError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }

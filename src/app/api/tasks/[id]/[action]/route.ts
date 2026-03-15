@@ -5,6 +5,57 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/permissions";
 import { logAuditEvent } from "@/lib/audit";
 import { notifyTaskSubmitted, notifyTaskApproved, notifyTaskRejected } from "@/lib/notifications";
+import { Prisma, Task } from "@prisma/client";
+
+/**
+ * Updates a task with optimistic locking to prevent race conditions.
+ * Uses version field to ensure the task hasn't been modified by another user.
+ * 
+ * @param taskId - The task ID to update
+ * @param currentVersion - The version number at the time of read
+ * @param updateData - The data to update
+ * @returns Updated task or null if version mismatch
+ */
+async function updateTaskWithOptimisticLock(
+  taskId: string,
+  currentVersion: number,
+  updateData: Prisma.TaskUpdateInput
+): Promise<Task | null> {
+  // Use updateMany to check version atomically
+  const result = await prisma.task.updateMany({
+    where: {
+      id: taskId,
+      version: currentVersion,
+    },
+    data: {
+      ...updateData,
+      version: { increment: 1 },
+    },
+  });
+
+  // If count is 0, version mismatch occurred (concurrent modification)
+  if (result.count === 0) {
+    return null;
+  }
+
+  // Fetch and return the updated task
+  const updatedTask = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: {
+      source: {
+        include: {
+          team: true,
+        },
+      },
+      entity: true,
+      assignee: true,
+      pic: true,
+      reviewer: true,
+    },
+  });
+
+  return updatedTask;
+}
 
 export async function POST(req: NextRequest, context: { params: { id: string; action: string } }) {
   try {
@@ -35,9 +86,9 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
 
     switch (action) {
       case "recall": {
-        // Only assignee can recall from PENDING_REVIEW
-        if (task.assigneeId !== session.user.userId) {
-          return NextResponse.json({ error: "Only the assignee can recall this task" }, { status: 403 });
+        // Only PIC can recall from PENDING_REVIEW
+        if (task.picId !== session.user.userId) {
+          return NextResponse.json({ error: "Only the person in charge (PIC) can recall this task" }, { status: 403 });
         }
         if (task.status !== "PENDING_REVIEW") {
           return NextResponse.json({ error: "Task must be in PENDING_REVIEW status" }, { status: 400 });
@@ -45,24 +96,17 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
 
         await requirePermission(session, "TASK_EXECUTION", "EDIT");
 
-        const updatedTask = await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            status: "IN_PROGRESS",
-            submittedAt: null,
-          },
-          include: {
-            source: {
-              include: {
-                team: true,
-              },
-            },
-            entity: true,
-            assignee: true,
-            pic: true,
-            reviewer: true,
-          },
+        const updatedTask = await updateTaskWithOptimisticLock(taskId, task.version, {
+          status: "IN_PROGRESS",
+          submittedAt: null,
         });
+
+        if (!updatedTask) {
+          return NextResponse.json(
+            { error: "Task was modified by another user. Please refresh and try again." },
+            { status: 409 }
+          );
+        }
 
         await logAuditEvent({
           action: "TASK_RECALLED",
@@ -87,29 +131,22 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
 
         await requirePermission(session, "REVIEW_QUEUE", "APPROVE");
 
-        const updatedTask = await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            status: "COMPLETED",
-            reviewedAt: new Date(),
-            completedAt: new Date(),
-          },
-          include: {
-            source: {
-              include: {
-                team: true,
-              },
-            },
-            entity: true,
-            assignee: true,
-            pic: true,
-            reviewer: true,
-          },
+        const updatedTask = await updateTaskWithOptimisticLock(taskId, task.version, {
+          status: "COMPLETED",
+          reviewedAt: new Date(),
+          completedAt: new Date(),
         });
 
-        // Notify assignee
-        if (task.assigneeId) {
-          await notifyTaskApproved(taskId, task.name, task.assigneeId, session.user.name || "Reviewer");
+        if (!updatedTask) {
+          return NextResponse.json(
+            { error: "Task was modified by another user. Please refresh and try again." },
+            { status: 409 }
+          );
+        }
+
+        // Notify PIC
+        if (task.picId) {
+          await notifyTaskApproved(taskId, task.name, task.picId, session.user.name || "Reviewer");
         }
 
         await logAuditEvent({
@@ -138,24 +175,17 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
         const body = await req.json();
         const comment = body.comment || "";
 
-        const updatedTask = await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            status: "IN_PROGRESS",
-            submittedAt: null,
-          },
-          include: {
-            source: {
-              include: {
-                team: true,
-              },
-            },
-            entity: true,
-            assignee: true,
-            pic: true,
-            reviewer: true,
-          },
+        const updatedTask = await updateTaskWithOptimisticLock(taskId, task.version, {
+          status: "IN_PROGRESS",
+          submittedAt: null,
         });
+
+        if (!updatedTask) {
+          return NextResponse.json(
+            { error: "Task was modified by another user. Please refresh and try again." },
+            { status: 409 }
+          );
+        }
 
         // Add comment if provided
         if (comment) {
@@ -168,9 +198,9 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
           });
         }
 
-        // Notify assignee
-        if (task.assigneeId) {
-          await notifyTaskRejected(taskId, task.name, task.assigneeId, session.user.name || "Reviewer", comment);
+        // Notify PIC
+        if (task.picId) {
+          await notifyTaskRejected(taskId, task.name, task.picId, session.user.name || "Reviewer", comment);
         }
 
         await logAuditEvent({
@@ -188,33 +218,26 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
 
       case "mark-complete": {
         // For tasks without approval requirement (CompOps)
-        if (task.assigneeId !== session.user.userId && task.picId !== session.user.userId) {
-          return NextResponse.json({ error: "Only assignee or PIC can mark task complete" }, { status: 403 });
+        if (task.picId !== session.user.userId) {
+          return NextResponse.json({ error: "Only the person in charge (PIC) can mark task complete" }, { status: 403 });
         }
-        if (task.source.team.approvalRequired) {
+        if (task.reviewRequired) {
           return NextResponse.json({ error: "This task requires approval workflow" }, { status: 400 });
         }
 
         await requirePermission(session, "TASK_EXECUTION", "EDIT");
 
-        const updatedTask = await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            status: "COMPLETED",
-            completedAt: new Date(),
-          },
-          include: {
-            source: {
-              include: {
-                team: true,
-              },
-            },
-            entity: true,
-            assignee: true,
-            pic: true,
-            reviewer: true,
-          },
+        const updatedTask = await updateTaskWithOptimisticLock(taskId, task.version, {
+          status: "COMPLETED",
+          completedAt: new Date(),
         });
+
+        if (!updatedTask) {
+          return NextResponse.json(
+            { error: "Task was modified by another user. Please refresh and try again." },
+            { status: 409 }
+          );
+        }
 
         await logAuditEvent({
           action: "TASK_COMPLETED",
@@ -229,37 +252,30 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
       }
 
       case "submit-review": {
-        // Only assignee can submit for review
-        if (task.assigneeId !== session.user.userId) {
-          return NextResponse.json({ error: "Only the assignee can submit this task for review" }, { status: 403 });
+        // Only PIC can submit for review
+        if (task.picId !== session.user.userId) {
+          return NextResponse.json({ error: "Only the person in charge (PIC) can submit this task for review" }, { status: 403 });
         }
         if (task.status !== "IN_PROGRESS") {
           return NextResponse.json({ error: "Task must be IN_PROGRESS" }, { status: 400 });
         }
-        if (!task.source.team.approvalRequired) {
+        if (!task.reviewRequired) {
           return NextResponse.json({ error: "This task does not require approval" }, { status: 400 });
         }
 
         await requirePermission(session, "TASK_EXECUTION", "EDIT");
 
-        const updatedTask = await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            status: "PENDING_REVIEW",
-            submittedAt: new Date(),
-          },
-          include: {
-            source: {
-              include: {
-                team: true,
-              },
-            },
-            entity: true,
-            assignee: true,
-            pic: true,
-            reviewer: true,
-          },
+        const updatedTask = await updateTaskWithOptimisticLock(taskId, task.version, {
+          status: "PENDING_REVIEW",
+          submittedAt: new Date(),
         });
+
+        if (!updatedTask) {
+          return NextResponse.json(
+            { error: "Task was modified by another user. Please refresh and try again." },
+            { status: 409 }
+          );
+        }
 
         // Notify reviewer
         if (task.reviewerId) {

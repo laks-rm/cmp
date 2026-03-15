@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback, memo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import Link from "next/link";
 import { useEntity } from "@/contexts/EntityContext";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -18,12 +20,19 @@ import {
   ChevronRight,
   AlertCircle,
   Clock,
-  Calendar,
+  Calendar as CalendarIcon,
   TrendingUp,
   X,
+  Info,
+  ArrowRight,
+  User,
+  UserCheck,
+  ChevronUp,
+  SlidersHorizontal,
 } from "lucide-react";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 import { format, isPast } from "date-fns";
+import { fetchApi } from "@/lib/api-client";
 
 type Task = {
   id: string;
@@ -40,6 +49,8 @@ type Task = {
   source: { id: string; name: string; code: string };
   sourceItem: { reference: string } | null;
   assignee: { id: string; name: string; initials: string; avatarColor: string | null } | null;
+  pic: { id: string; name: string; initials: string; avatarColor: string | null } | null;
+  responsibleTeam: { id: string; name: string } | null;
 };
 
 type FilterChip = {
@@ -139,15 +150,13 @@ const TaskRow = memo(
           </span>
         </td>
         <td className="px-4 py-3">
-          {task.assignee ? (
-            <div className="flex items-center gap-2">
-              <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold text-white ${task.assignee.avatarColor || "bg-slate-400"}`}>
-                {task.assignee.initials}
-              </div>
-              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                {task.assignee.name.split(" ")[0]}
-              </span>
-            </div>
+          {task.responsibleTeam ? (
+            <span 
+              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium" 
+              style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
+            >
+              {task.responsibleTeam.name}
+            </span>
           ) : (
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
               Not assigned
@@ -214,6 +223,7 @@ export function TaskTrackerClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sourceIdParam = searchParams.get("sourceId");
+  const { data: session } = useSession();
   
   const { selectedEntityId, selectedTeamId } = useEntity();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -231,7 +241,12 @@ export function TaskTrackerClient() {
     quarter: "",
     frequency: "",
     entity: "",
+    status: "",
+    riskRating: "",
+    dueDateFrom: "",
+    dueDateTo: "",
   });
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -259,40 +274,60 @@ export function TaskTrackerClient() {
       if (filters.entity) {
         params.set("entityId", filters.entity);
       }
+      if (filters.status) {
+        params.set("status", filters.status);
+      }
+      if (filters.riskRating) {
+        params.set("riskRating", filters.riskRating);
+      }
       if (sourceIdParam) {
         params.set("sourceId", sourceIdParam);
       }
 
       if (filters.preset === "overdue") {
-        params.set("status", "IN_PROGRESS");
+        params.set("overdue", "true");
       } else if (filters.preset === "pending-review") {
         params.set("status", "PENDING_REVIEW");
       } else if (filters.preset === "high-risk") {
         params.set("riskRating", "HIGH");
+      } else if (filters.preset === "my-tasks" && session?.user?.userId) {
+        params.set("picId", session.user.userId);
+      } else if (filters.preset === "my-team" && session?.user?.teamIds) {
+        params.set("responsibleTeamId", session.user.teamIds.join(","));
       }
 
-      const res = await fetch(`/api/tasks?${params.toString()}`);
-      const data = await res.json();
-      setTasks(data.tasks || []);
-      setTotal(data.pagination?.total || 0);
+      const data = await fetchApi<{ tasks: Task[]; pagination: { total: number } }>(`/api/tasks?${params.toString()}`);
+      
+      let filteredTasks = data.tasks || [];
+      
+      // Client-side date range filtering
+      if (filters.dueDateFrom || filters.dueDateTo) {
+        filteredTasks = filteredTasks.filter((task: Task) => {
+          if (!task.dueDate) return false;
+          const taskDate = new Date(task.dueDate);
+          if (filters.dueDateFrom && taskDate < new Date(filters.dueDateFrom)) return false;
+          if (filters.dueDateTo && taskDate > new Date(filters.dueDateTo)) return false;
+          return true;
+        });
+      }
+      
+      setTasks(filteredTasks);
+      setTotal(filters.dueDateFrom || filters.dueDateTo ? filteredTasks.length : data.pagination?.total || 0);
     } catch (error) {
       console.error("Failed to fetch tasks:", error);
       toast.error("Failed to load tasks");
     } finally {
       setLoading(false);
     }
-  }, [selectedEntityId, selectedTeamId, filters, searchQuery, page, sourceIdParam]);
+  }, [selectedEntityId, selectedTeamId, filters, searchQuery, page, sourceIdParam, session]);
 
   // Load source information when sourceId parameter is present
   useEffect(() => {
     const loadSourceInfo = async () => {
       if (sourceIdParam && !sourceFilter) {
         try {
-          const res = await fetch(`/api/sources/${sourceIdParam}`);
-          if (res.ok) {
-            const source = await res.json();
-            setSourceFilter({ id: source.id, name: source.name });
-          }
+          const source = await fetchApi<{ id: string; name: string }>(`/api/sources/${sourceIdParam}`);
+          setSourceFilter({ id: source.id, name: source.name });
         } catch (error) {
           console.error("Failed to load source info:", error);
         }
@@ -307,21 +342,15 @@ export function TaskTrackerClient() {
 
   async function handleStatusChange(taskId: string, status: string) {
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
+      await fetchApi(`/api/tasks/${taskId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
-
-      if (res.ok) {
-        toast.success("Status updated");
-        fetchTasks();
-      } else {
-        toast.error("Failed to update status");
-      }
+      toast.success("Status updated");
+      fetchTasks();
     } catch (error) {
       console.error("Failed to update status:", error);
-      toast.error("Failed to update status");
+      // Error toast already shown by fetchApi
     }
   }
 
@@ -350,9 +379,11 @@ export function TaskTrackerClient() {
 
   const presetFilters: FilterChip[] = [
     { id: "all", label: "All", active: filters.preset === "all" },
+    { id: "my-tasks", label: "My Tasks", active: filters.preset === "my-tasks", icon: <User size={14} /> },
+    { id: "my-team", label: "My Team", active: filters.preset === "my-team", icon: <UserCheck size={14} /> },
     { id: "overdue", label: "Overdue", active: filters.preset === "overdue", icon: <AlertCircle size={14} /> },
     { id: "pending-review", label: "Pending Review", active: filters.preset === "pending-review", icon: <Clock size={14} /> },
-    { id: "due-week", label: "Due This Week", active: filters.preset === "due-week", icon: <Calendar size={14} /> },
+    { id: "due-week", label: "Due This Week", active: filters.preset === "due-week", icon: <CalendarIcon size={14} /> },
     { id: "high-risk", label: "High Risk", active: filters.preset === "high-risk", icon: <TrendingUp size={14} /> },
   ];
 
@@ -375,6 +406,27 @@ export function TaskTrackerClient() {
 
   return (
     <div className="space-y-4">
+      {/* Calendar Info Chip */}
+      <div className="flex items-center justify-between rounded-lg border p-3" style={{ backgroundColor: "var(--bg-subtle)", borderColor: "var(--border)" }}>
+        <div className="flex items-center gap-2">
+          <Info size={16} style={{ color: "var(--blue)" }} />
+          <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            Showing active tasks. View all planned tasks in
+          </span>
+        </div>
+        <Link
+          href="/calendar"
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+          style={{ backgroundColor: "var(--blue)", color: "white" }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        >
+          <CalendarIcon size={14} />
+          Calendar
+          <ArrowRight size={14} />
+        </Link>
+      </div>
+
       {/* Source Filter Indicator */}
       {sourceFilter && (
         <div className="flex items-center justify-between rounded-lg border p-3" style={{ backgroundColor: "var(--blue-light)", borderColor: "var(--blue)" }}>
@@ -443,6 +495,17 @@ export function TaskTrackerClient() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            className={`flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-all ${
+              showAdvancedFilters ? "border-[var(--blue)] bg-[var(--blue-light)] text-[var(--blue)]" : "border-[var(--border)] bg-white text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
+            }`}
+          >
+            <SlidersHorizontal size={16} />
+            Filters
+            {showAdvancedFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+
           <div className="relative">
             <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-muted)" }} />
             <input
@@ -486,6 +549,101 @@ export function TaskTrackerClient() {
         </div>
       </div>
 
+      {/* Advanced Filters Panel */}
+      {showAdvancedFilters && (
+        <div className="rounded-lg border bg-white p-4 space-y-4" style={{ borderColor: "var(--border)" }}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Status Filter */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                Status
+              </label>
+              <select
+                value={filters.status}
+                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              >
+                <option value="">All Statuses</option>
+                <option value="TO_DO">To Do</option>
+                <option value="IN_PROGRESS">In Progress</option>
+                <option value="PENDING_REVIEW">Pending Review</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="DEFERRED">Deferred</option>
+                <option value="NOT_APPLICABLE">Not Applicable</option>
+              </select>
+            </div>
+
+            {/* Risk Rating Filter */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                Risk Rating
+              </label>
+              <select
+                value={filters.riskRating}
+                onChange={(e) => setFilters({ ...filters, riskRating: e.target.value })}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              >
+                <option value="">All Risk Levels</option>
+                <option value="HIGH">High</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="LOW">Low</option>
+              </select>
+            </div>
+
+            {/* Due Date From */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                Due Date From
+              </label>
+              <input
+                type="date"
+                value={filters.dueDateFrom}
+                onChange={(e) => setFilters({ ...filters, dueDateFrom: e.target.value })}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              />
+            </div>
+
+            {/* Due Date To */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                Due Date To
+              </label>
+              <input
+                type="date"
+                value={filters.dueDateTo}
+                onChange={(e) => setFilters({ ...filters, dueDateTo: e.target.value })}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              />
+            </div>
+          </div>
+
+          {/* Clear Filters Button */}
+          <div className="flex justify-end">
+            <button
+              onClick={() => setFilters({ 
+                preset: "all", 
+                quarter: "", 
+                frequency: "", 
+                entity: "", 
+                status: "", 
+                riskRating: "", 
+                dueDateFrom: "", 
+                dueDateTo: "" 
+              })}
+              className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
+              style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+            >
+              <X size={14} />
+              Clear All Filters
+            </button>
+          </div>
+        </div>
+      )}
+
       {selectedIds.size > 0 && (
         <div className="flex items-center justify-between rounded-lg border p-3" style={{ backgroundColor: "var(--blue-light)", borderColor: "var(--blue)" }}>
           <span className="text-sm font-medium" style={{ color: "var(--blue)" }}>
@@ -496,7 +654,7 @@ export function TaskTrackerClient() {
               className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white"
               style={{ borderColor: "var(--blue)", color: "var(--blue)", backgroundColor: "transparent" }}
             >
-              Set Responsible...
+              Set Team...
             </button>
             <button
               className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white"
@@ -544,7 +702,7 @@ export function TaskTrackerClient() {
                   Risk
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Responsible
+                  Team
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
                   Freq / Quarter

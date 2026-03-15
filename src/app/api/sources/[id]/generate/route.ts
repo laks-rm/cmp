@@ -6,12 +6,165 @@ import { requirePermission } from "@/lib/permissions";
 import { bulkGenerateTasksSchema } from "@/lib/validations/sources";
 import { logAuditEvent } from "@/lib/audit";
 import { ApiError } from "@/lib/errors";
+import { z } from "zod";
+import { v4 as uuidv4 } from "uuid";
+import { addDays, endOfMonth, endOfYear, startOfYear, differenceInDays } from "date-fns";
+import { acquireConcurrentSlot, createConcurrentLimitResponse } from "@/lib/concurrentLimit";
+
+type RecurrenceInstance = {
+  index: number;
+  totalCount: number | null;
+  plannedDate: Date;
+  quarter: string | null;
+};
+
+function calculateRecurrenceInstances(frequency: string, baseDueDate: Date | null): RecurrenceInstance[] {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const instances: RecurrenceInstance[] = [];
+
+  switch (frequency) {
+    case "ADHOC": {
+      // Ad-hoc tasks are created as needed, no automatic recurrence
+      // Create a single instance with no due date (or base due date if provided)
+      const dueDate = baseDueDate || null;
+      instances.push({ 
+        index: 1, 
+        totalCount: 1, 
+        plannedDate: dueDate || now, // Use current date as placeholder if no due date
+        quarter: null 
+      });
+      break;
+    }
+
+    case "ANNUAL": {
+      const dueDate = baseDueDate || endOfYear(new Date(currentYear, 11, 31));
+      instances.push({ index: 1, totalCount: 1, plannedDate: dueDate, quarter: null });
+      break;
+    }
+
+    case "BIENNIAL": {
+      // BIENNIAL tasks occur every 2 years
+      // Schedule for the next even year (or current year if already even)
+      const isEvenYear = currentYear % 2 === 0;
+      const biennialYear = isEvenYear ? currentYear : currentYear + 1;
+      const dueDate = baseDueDate || endOfYear(new Date(biennialYear, 11, 31));
+      instances.push({ index: 1, totalCount: 1, plannedDate: dueDate, quarter: null });
+      break;
+    }
+
+    case "SEMI_ANNUAL": {
+      const h1Due = new Date(currentYear, 5, 30); // June 30
+      const h2Due = new Date(currentYear, 11, 31); // Dec 31
+      instances.push(
+        { index: 1, totalCount: 2, plannedDate: h1Due, quarter: "H1" },
+        { index: 2, totalCount: 2, plannedDate: h2Due, quarter: "H2" }
+      );
+      break;
+    }
+
+    case "QUARTERLY": {
+      const q1Due = new Date(currentYear, 2, 31); // Mar 31
+      const q2Due = new Date(currentYear, 5, 30); // Jun 30
+      const q3Due = new Date(currentYear, 8, 30); // Sep 30
+      const q4Due = new Date(currentYear, 11, 31); // Dec 31
+      instances.push(
+        { index: 1, totalCount: 4, plannedDate: q1Due, quarter: "Q1" },
+        { index: 2, totalCount: 4, plannedDate: q2Due, quarter: "Q2" },
+        { index: 3, totalCount: 4, plannedDate: q3Due, quarter: "Q3" },
+        { index: 4, totalCount: 4, plannedDate: q4Due, quarter: "Q4" }
+      );
+      break;
+    }
+
+    case "MONTHLY": {
+      for (let month = 0; month < 12; month++) {
+        const dueDate = endOfMonth(new Date(currentYear, month, 1));
+        const quarter = `Q${Math.floor(month / 3) + 1}`;
+        instances.push({ index: month + 1, totalCount: 12, plannedDate: dueDate, quarter });
+      }
+      break;
+    }
+
+    case "WEEKLY": {
+      const now = new Date();
+      const thirtyDaysOut = addDays(now, 30);
+      let currentDate = now;
+      let weekIndex = 1;
+      
+      // Only generate next 30 days of weekly tasks
+      while (currentDate <= thirtyDaysOut) {
+        const month = currentDate.getMonth();
+        const quarter = `Q${Math.floor(month / 3) + 1}`;
+        instances.push({ 
+          index: weekIndex, 
+          totalCount: null,
+          plannedDate: currentDate, 
+          quarter 
+        });
+        currentDate = addDays(currentDate, 7);
+        weekIndex++;
+      }
+      break;
+    }
+
+    case "DAILY": {
+      const now = new Date();
+      const thirtyDaysOut = addDays(now, 30);
+      let day = 0;
+      
+      // Only generate next 30 days of daily tasks
+      while (addDays(now, day) <= thirtyDaysOut) {
+        const dueDate = addDays(now, day);
+        const month = dueDate.getMonth();
+        const quarter = `Q${Math.floor(month / 3) + 1}`;
+        instances.push({ 
+          index: day + 1, 
+          totalCount: null,
+          plannedDate: dueDate, 
+          quarter 
+        });
+        day++;
+      }
+      break;
+    }
+
+    case "ONE_TIME":
+    default: {
+      const dueDate = baseDueDate || new Date(currentYear, 11, 31);
+      instances.push({ index: 1, totalCount: 1, plannedDate: dueDate, quarter: null });
+      break;
+    }
+  }
+
+  return instances;
+}
+
+function shouldStartAsActive(plannedDate: Date): boolean {
+  const now = new Date();
+  const daysUntilPlanned = differenceInDays(plannedDate, now);
+  return daysUntilPlanned <= 30;
+}
 
 export async function POST(req: NextRequest, context: { params: { id: string } }) {
+  let releaseSlot: (() => void) | undefined;
+  
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Acquire concurrent request slot (task generation can create hundreds of tasks)
+    releaseSlot = await acquireConcurrentSlot(session.user.userId, {
+      maxConcurrent: 3, // Low limit for task generation (database intensive)
+      errorMessage: "Task generation is already in progress. Please wait for the current generation to complete.",
+    });
+    
+    if (!releaseSlot) {
+      return createConcurrentLimitResponse(
+        "Task generation is already in progress. Please wait for the current generation to complete."
+      );
     }
 
     await requirePermission(session, "SOURCES", "CREATE");
@@ -55,12 +208,12 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
       warnings.push(`${itemsWithoutTasks.length} items have no tasks`);
     }
 
-    // Check for tasks with no assignee
-    const tasksWithoutAssignee = validatedData.items.flatMap((item) =>
-      item.tasks.filter((task) => !task.assigneeId)
+    // Check for tasks with no responsible team
+    const tasksWithoutResponsibleTeam = validatedData.items.flatMap((item) =>
+      item.tasks.filter((task) => !task.responsibleTeamId)
     );
-    if (tasksWithoutAssignee.length > 0) {
-      warnings.push(`${tasksWithoutAssignee.length} tasks have no assignee`);
+    if (tasksWithoutResponsibleTeam.length > 0) {
+      warnings.push(`${tasksWithoutResponsibleTeam.length} tasks have no responsible team`);
     }
 
     if (errors.length > 0) {
@@ -70,10 +223,10 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
       );
     }
 
-    // Generate items and tasks in a transaction
+    // Generate items and tasks in a transaction with extended timeout
     const result = await prisma.$transaction(async (tx) => {
       const createdItems = [];
-      const createdTasks = [];
+      const tasksToCreate = [];
 
       for (const itemData of validatedData.items) {
         // Create source item
@@ -90,10 +243,21 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
 
         createdItems.push(item);
 
-        // Create tasks for this item
+        // Prepare tasks for batch creation
         for (const taskData of itemData.tasks) {
-          const task = await tx.task.create({
-            data: {
+          const recurrenceGroupId = uuidv4();
+          const instances = calculateRecurrenceInstances(
+            taskData.frequency,
+            taskData.dueDate ? new Date(taskData.dueDate) : null
+          );
+          
+          // For each recurrence instance, prepare task data
+          for (let i = 0; i < instances.length; i++) {
+            const instance = instances[i];
+            const isFirstInstance = i === 0;
+            const shouldActivate = isFirstInstance || shouldStartAsActive(instance.plannedDate);
+
+            tasksToCreate.push({
               sourceId,
               sourceItemId: item.id,
               name: taskData.name,
@@ -101,13 +265,15 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
               expectedOutcome: taskData.expectedOutcome,
               entityId: taskData.entityId,
               frequency: taskData.frequency,
-              quarter: taskData.quarter,
+              quarter: instance.quarter || taskData.quarter,
               riskRating: taskData.riskRating,
-              assigneeId: taskData.assigneeId,
-              picId: taskData.picId,
-              reviewerId: taskData.reviewerId,
+              assigneeId: taskData.assigneeId || null,
+              responsibleTeamId: taskData.responsibleTeamId || null,
+              picId: taskData.picId || null,
+              reviewerId: taskData.reviewerId || null,
               startDate: taskData.startDate ? new Date(taskData.startDate) : null,
-              dueDate: taskData.dueDate ? new Date(taskData.dueDate) : null,
+              dueDate: instance.plannedDate,
+              plannedDate: instance.plannedDate,
               testingPeriodStart: taskData.testingPeriodStart ? new Date(taskData.testingPeriodStart) : null,
               testingPeriodEnd: taskData.testingPeriodEnd ? new Date(taskData.testingPeriodEnd) : null,
               evidenceRequired: taskData.evidenceRequired,
@@ -115,13 +281,19 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
               reviewRequired: taskData.reviewRequired,
               clickupUrl: taskData.clickupUrl || null,
               gdriveUrl: taskData.gdriveUrl || null,
-              status: "TO_DO",
-            },
-          });
-
-          createdTasks.push(task);
+              recurrenceGroupId: instances.length > 1 ? recurrenceGroupId : null,
+              recurrenceIndex: instances.length > 1 ? instance.index : null,
+              recurrenceTotalCount: instances.length > 1 ? instance.totalCount : null,
+              status: shouldActivate ? "TO_DO" : "PLANNED",
+            });
+          }
         }
       }
+
+      // Batch create all tasks at once
+      const createdTasksResult = await tx.task.createMany({
+        data: tasksToCreate,
+      });
 
       // Update source status to ACTIVE
       await tx.source.update({
@@ -129,7 +301,12 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
         data: { status: "ACTIVE" },
       });
 
-      return { createdItems, createdTasks };
+      return { 
+        createdItems, 
+        createdTasksCount: createdTasksResult.count 
+      };
+    }, {
+      timeout: 120000, // 2 minute timeout for large sources
     });
 
     // Audit log
@@ -141,21 +318,31 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
       targetId: sourceId,
       details: {
         itemsCount: result.createdItems.length,
-        tasksCount: result.createdTasks.length,
+        tasksCount: result.createdTasksCount,
       },
     });
 
     return NextResponse.json({
       success: true,
       itemsCreated: result.createdItems.length,
-      tasksCreated: result.createdTasks.length,
+      tasksCreated: result.createdTasksCount,
       warnings,
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error("Generation validation error:", JSON.stringify(error.issues, null, 2));
+      return NextResponse.json({ 
+        error: "Validation failed: " + error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join(", "),
+        issues: error.issues 
+      }, { status: 400 });
+    }
     if (error instanceof ApiError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error("Source generation error:", error);
     return NextResponse.json({ error: "Failed to generate source tasks" }, { status: 500 });
+  } finally {
+    // CRITICAL: Always release concurrent slot
+    releaseSlot?.();
   }
 }

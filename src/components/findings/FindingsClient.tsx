@@ -5,7 +5,7 @@ import { format, isPast } from "date-fns";
 import { Plus, AlertTriangle, Download, ChevronDown } from "lucide-react";
 import { FindingModal } from "@/components/findings/FindingModal";
 import { FindingDetailModal } from "@/components/findings/FindingDetailModal";
-import toast from "react-hot-toast";
+import toast from "@/lib/toast";
 
 type Finding = {
   id: string;

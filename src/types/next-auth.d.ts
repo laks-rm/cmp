@@ -9,6 +9,7 @@ declare module "next-auth" {
       roleName: string;
       entityIds: string[];
       teamIds: string[];
+      timezone: string;
     };
   }
 }
@@ -23,6 +24,7 @@ declare module "next-auth/jwt" {
     roleName: string;
     entityIds: string[];
     teamIds: string[];
+    timezone: string;
     lastRefreshAt?: number;
   }
 }

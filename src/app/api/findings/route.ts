@@ -7,6 +7,63 @@ import { createFindingSchema } from "@/lib/validations/findings";
 import { logAuditEvent } from "@/lib/audit";
 import { notifyFindingCreated } from "@/lib/notifications";
 import { ApiError } from "@/lib/errors";
+import { Prisma } from "@prisma/client";
+
+/**
+ * Generates a unique finding reference with optimistic locking and retry mechanism
+ * to prevent race conditions when multiple requests try to create findings concurrently.
+ * 
+ * @param maxRetries - Maximum number of retry attempts (default: 5)
+ * @returns Promise<string> - Unique finding reference in format F-{YEAR}-{SEQ}
+ * @throws Error if unable to generate unique reference after max retries
+ */
+async function generateUniqueFindingReference(maxRetries = 5): Promise<string> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const year = new Date().getFullYear();
+    
+    // Find the last finding reference for this year
+    const lastFinding = await prisma.finding.findFirst({
+      where: {
+        reference: {
+          startsWith: `F-${year}-`,
+        },
+      },
+      orderBy: { reference: "desc" },
+      select: { reference: true },
+    });
+
+    let sequence = 1;
+    if (lastFinding) {
+      const parts = lastFinding.reference.split("-");
+      const lastSeq = parseInt(parts[2], 10);
+      if (!isNaN(lastSeq)) {
+        sequence = lastSeq + 1;
+      }
+    }
+
+    const reference = `F-${year}-${sequence.toString().padStart(3, "0")}`;
+
+    // Verify reference doesn't exist (double-check before returning)
+    const existingFinding = await prisma.finding.findUnique({
+      where: { reference },
+      select: { id: true },
+    });
+
+    if (!existingFinding) {
+      return reference;
+    }
+
+    // Reference already exists, add exponential backoff and retry
+    if (attempt < maxRetries - 1) {
+      // Random backoff between 10ms and 100ms, increasing with attempts
+      const backoffMs = Math.random() * (50 * (attempt + 1)) + 10;
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+      continue;
+    }
+  }
+
+  throw new Error(`Failed to generate unique finding reference after ${maxRetries} attempts`);
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -22,7 +79,8 @@ export async function GET(req: NextRequest) {
     const severity = searchParams.get("severity");
     const sourceId = searchParams.get("sourceId");
     const actionOwnerId = searchParams.get("actionOwnerId");
-    const limit = parseInt(searchParams.get("limit") || "100");
+    const requestedLimit = parseInt(searchParams.get("limit") || "100");
+    const limit = Math.min(requestedLimit, 100); // Cap at 100 to prevent resource exhaustion
     const critical = searchParams.get("critical") === "true";
 
     const where: Record<string, unknown> = {};
@@ -109,68 +167,65 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Access denied to entity" }, { status: 403 });
     }
 
-    // Generate reference: F-{YEAR}-{SEQ}
-    const year = new Date().getFullYear();
-    const lastFinding = await prisma.finding.findFirst({
-      where: {
-        reference: {
-          startsWith: `F-${year}-`,
+    // Generate unique reference with retry mechanism to prevent race conditions
+    const reference = await generateUniqueFindingReference();
+
+    // Create finding with atomic database constraint check
+    try {
+      const finding = await prisma.finding.create({
+        data: {
+          reference,
+          title: validatedData.title,
+          description: validatedData.description,
+          severity: validatedData.severity,
+          rootCause: validatedData.rootCause,
+          impact: validatedData.impact,
+          managementResponse: validatedData.managementResponse,
+          targetDate: validatedData.targetDate ? new Date(validatedData.targetDate) : null,
+          sourceId: validatedData.sourceId,
+          taskId: validatedData.taskId,
+          entityId: validatedData.entityId,
+          actionOwnerId: validatedData.actionOwnerId,
+          raisedById: session.user.userId,
+          status: "OPEN",
         },
-      },
-      orderBy: { reference: "desc" },
-    });
+        include: {
+          source: true,
+          entity: true,
+          actionOwner: true,
+          raisedBy: true,
+        },
+      });
 
-    let sequence = 1;
-    if (lastFinding) {
-      const lastSeq = parseInt(lastFinding.reference.split("-")[2]);
-      sequence = lastSeq + 1;
-    }
+      // Create notification for action owner
+      await notifyFindingCreated(finding.id, finding.reference, finding.title, validatedData.actionOwnerId, session.user.name || "System");
 
-    const reference = `F-${year}-${sequence.toString().padStart(3, "0")}`;
-
-    const finding = await prisma.finding.create({
-      data: {
-        reference,
-        title: validatedData.title,
-        description: validatedData.description,
-        severity: validatedData.severity,
-        rootCause: validatedData.rootCause,
-        impact: validatedData.impact,
-        managementResponse: validatedData.managementResponse,
-        targetDate: validatedData.targetDate ? new Date(validatedData.targetDate) : null,
-        sourceId: validatedData.sourceId,
-        taskId: validatedData.taskId,
+      await logAuditEvent({
+        action: "FINDING_CREATED",
+        module: "FINDINGS",
+        userId: session.user.userId,
         entityId: validatedData.entityId,
-        actionOwnerId: validatedData.actionOwnerId,
-        raisedById: session.user.userId,
-        status: "OPEN",
-      },
-      include: {
-        source: true,
-        entity: true,
-        actionOwner: true,
-        raisedBy: true,
-      },
-    });
+        targetType: "Finding",
+        targetId: finding.id,
+        details: {
+          reference: finding.reference,
+          severity: finding.severity,
+          actionOwnerId: validatedData.actionOwnerId,
+        },
+      });
 
-    // Create notification for action owner
-    await notifyFindingCreated(finding.id, finding.reference, finding.title, validatedData.actionOwnerId, session.user.name || "System");
-
-    await logAuditEvent({
-      action: "FINDING_CREATED",
-      module: "FINDINGS",
-      userId: session.user.userId,
-      entityId: validatedData.entityId,
-      targetType: "Finding",
-      targetId: finding.id,
-      details: {
-        reference: finding.reference,
-        severity: finding.severity,
-        actionOwnerId: validatedData.actionOwnerId,
-      },
-    });
-
-    return NextResponse.json(finding);
+      return NextResponse.json(finding);
+    } catch (error) {
+      // Handle unique constraint violation (extremely rare with our retry logic)
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        console.error("Duplicate finding reference despite retry logic:", reference);
+        return NextResponse.json(
+          { error: "Failed to generate unique finding reference. Please try again." },
+          { status: 409 }
+        );
+      }
+      throw error;
+    }
   } catch (error) {
     if (error instanceof ApiError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
