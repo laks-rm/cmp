@@ -289,6 +289,7 @@ model Task {
   submittedAt          DateTime?
   reviewedAt           DateTime?
   completedAt          DateTime?
+  version              Int         @default(0)
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
   source               Source      @relation(fields: [sourceId], references: [id], onDelete: Restrict)
@@ -311,6 +312,7 @@ model Task {
   @@index([reviewerId])
   @@index([recurrenceGroupId])
   @@index([plannedDate])
+  @@index([id, version])
 }
 
 model Evidence {

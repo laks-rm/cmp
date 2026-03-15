@@ -142,7 +142,7 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
             data: {
               type: "TASK_SUBMITTED",
               title: "Task Submitted for Review",
-              message: `Task "${existingTask.name}" has been submitted for your review`,
+              message: `Task "${existingTask.source.name}" has been submitted for your review`,
               userId: existingTask.reviewerId,
               linkUrl: `/tasks/${taskId}`,
             },
@@ -211,9 +211,28 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
       updates.testingPeriodEnd = new Date(data.testingPeriodEnd);
     }
 
-    const updatedTask = await prisma.task.update({
+    // Use optimistic locking with version field
+    const result = await prisma.task.updateMany({
+      where: {
+        id: taskId,
+        version: existingTask.version,
+      },
+      data: {
+        ...updates,
+        version: { increment: 1 },
+      },
+    });
+
+    if (result.count === 0) {
+      return NextResponse.json(
+        { error: "Task was modified by another user. Please refresh and try again." },
+        { status: 409 }
+      );
+    }
+
+    // Fetch the updated task to return
+    const updatedTask = await prisma.task.findUnique({
       where: { id: taskId },
-      data: updates,
       include: {
         source: {
           include: {
@@ -231,7 +250,7 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
       action: "TASK_UPDATED",
       module: "TASKS",
       userId: session.user.userId,
-      entityId: updatedTask.entityId,
+      entityId: existingTask.entityId,
       targetType: "Task",
       targetId: taskId,
     });

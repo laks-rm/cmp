@@ -5,6 +5,57 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/permissions";
 import { logAuditEvent } from "@/lib/audit";
 import { notifyTaskSubmitted, notifyTaskApproved, notifyTaskRejected } from "@/lib/notifications";
+import { Prisma, Task } from "@prisma/client";
+
+/**
+ * Updates a task with optimistic locking to prevent race conditions.
+ * Uses version field to ensure the task hasn't been modified by another user.
+ * 
+ * @param taskId - The task ID to update
+ * @param currentVersion - The version number at the time of read
+ * @param updateData - The data to update
+ * @returns Updated task or null if version mismatch
+ */
+async function updateTaskWithOptimisticLock(
+  taskId: string,
+  currentVersion: number,
+  updateData: Prisma.TaskUpdateInput
+): Promise<Task | null> {
+  // Use updateMany to check version atomically
+  const result = await prisma.task.updateMany({
+    where: {
+      id: taskId,
+      version: currentVersion,
+    },
+    data: {
+      ...updateData,
+      version: { increment: 1 },
+    },
+  });
+
+  // If count is 0, version mismatch occurred (concurrent modification)
+  if (result.count === 0) {
+    return null;
+  }
+
+  // Fetch and return the updated task
+  const updatedTask = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: {
+      source: {
+        include: {
+          team: true,
+        },
+      },
+      entity: true,
+      assignee: true,
+      pic: true,
+      reviewer: true,
+    },
+  });
+
+  return updatedTask;
+}
 
 export async function POST(req: NextRequest, context: { params: { id: string; action: string } }) {
   try {
@@ -45,24 +96,17 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
 
         await requirePermission(session, "TASK_EXECUTION", "EDIT");
 
-        const updatedTask = await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            status: "IN_PROGRESS",
-            submittedAt: null,
-          },
-          include: {
-            source: {
-              include: {
-                team: true,
-              },
-            },
-            entity: true,
-            assignee: true,
-            pic: true,
-            reviewer: true,
-          },
+        const updatedTask = await updateTaskWithOptimisticLock(taskId, task.version, {
+          status: "IN_PROGRESS",
+          submittedAt: null,
         });
+
+        if (!updatedTask) {
+          return NextResponse.json(
+            { error: "Task was modified by another user. Please refresh and try again." },
+            { status: 409 }
+          );
+        }
 
         await logAuditEvent({
           action: "TASK_RECALLED",
@@ -87,25 +131,18 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
 
         await requirePermission(session, "REVIEW_QUEUE", "APPROVE");
 
-        const updatedTask = await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            status: "COMPLETED",
-            reviewedAt: new Date(),
-            completedAt: new Date(),
-          },
-          include: {
-            source: {
-              include: {
-                team: true,
-              },
-            },
-            entity: true,
-            assignee: true,
-            pic: true,
-            reviewer: true,
-          },
+        const updatedTask = await updateTaskWithOptimisticLock(taskId, task.version, {
+          status: "COMPLETED",
+          reviewedAt: new Date(),
+          completedAt: new Date(),
         });
+
+        if (!updatedTask) {
+          return NextResponse.json(
+            { error: "Task was modified by another user. Please refresh and try again." },
+            { status: 409 }
+          );
+        }
 
         // Notify PIC
         if (task.picId) {
@@ -138,24 +175,17 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
         const body = await req.json();
         const comment = body.comment || "";
 
-        const updatedTask = await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            status: "IN_PROGRESS",
-            submittedAt: null,
-          },
-          include: {
-            source: {
-              include: {
-                team: true,
-              },
-            },
-            entity: true,
-            assignee: true,
-            pic: true,
-            reviewer: true,
-          },
+        const updatedTask = await updateTaskWithOptimisticLock(taskId, task.version, {
+          status: "IN_PROGRESS",
+          submittedAt: null,
         });
+
+        if (!updatedTask) {
+          return NextResponse.json(
+            { error: "Task was modified by another user. Please refresh and try again." },
+            { status: 409 }
+          );
+        }
 
         // Add comment if provided
         if (comment) {
@@ -197,24 +227,17 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
 
         await requirePermission(session, "TASK_EXECUTION", "EDIT");
 
-        const updatedTask = await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            status: "COMPLETED",
-            completedAt: new Date(),
-          },
-          include: {
-            source: {
-              include: {
-                team: true,
-              },
-            },
-            entity: true,
-            assignee: true,
-            pic: true,
-            reviewer: true,
-          },
+        const updatedTask = await updateTaskWithOptimisticLock(taskId, task.version, {
+          status: "COMPLETED",
+          completedAt: new Date(),
         });
+
+        if (!updatedTask) {
+          return NextResponse.json(
+            { error: "Task was modified by another user. Please refresh and try again." },
+            { status: 409 }
+          );
+        }
 
         await logAuditEvent({
           action: "TASK_COMPLETED",
@@ -242,24 +265,17 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
 
         await requirePermission(session, "TASK_EXECUTION", "EDIT");
 
-        const updatedTask = await prisma.task.update({
-          where: { id: taskId },
-          data: {
-            status: "PENDING_REVIEW",
-            submittedAt: new Date(),
-          },
-          include: {
-            source: {
-              include: {
-                team: true,
-              },
-            },
-            entity: true,
-            assignee: true,
-            pic: true,
-            reviewer: true,
-          },
+        const updatedTask = await updateTaskWithOptimisticLock(taskId, task.version, {
+          status: "PENDING_REVIEW",
+          submittedAt: new Date(),
         });
+
+        if (!updatedTask) {
+          return NextResponse.json(
+            { error: "Task was modified by another user. Please refresh and try again." },
+            { status: 409 }
+          );
+        }
 
         // Notify reviewer
         if (task.reviewerId) {
