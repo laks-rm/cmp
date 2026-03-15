@@ -7,9 +7,9 @@ export type ErrorContext = {
   httpMethod?: string;
   statusCode?: number;
   apiEndpoint?: string;
-  requestBody?: any;
+  requestBody?: Record<string, unknown>;
   componentName?: string;
-  additionalInfo?: Record<string, any>;
+  additionalInfo?: Record<string, unknown>;
 };
 
 export type LogErrorParams = {
@@ -23,7 +23,7 @@ export type LogErrorParams = {
 /**
  * Sanitizes sensitive data from objects before logging
  */
-function sanitizeData(data: any): any {
+function sanitizeData(data: unknown): unknown {
   if (!data || typeof data !== "object") return data;
 
   const sensitiveKeys = [
@@ -45,9 +45,9 @@ function sanitizeData(data: any): any {
   for (const key in sanitized) {
     const lowerKey = key.toLowerCase();
     if (sensitiveKeys.some((sensitive) => lowerKey.includes(sensitive))) {
-      sanitized[key] = "[REDACTED]";
-    } else if (typeof sanitized[key] === "object" && sanitized[key] !== null) {
-      sanitized[key] = sanitizeData(sanitized[key]);
+      (sanitized as Record<string, unknown>)[key] = "[REDACTED]";
+    } else if (typeof (sanitized as Record<string, unknown>)[key] === "object" && (sanitized as Record<string, unknown>)[key] !== null) {
+      (sanitized as Record<string, unknown>)[key] = sanitizeData((sanitized as Record<string, unknown>)[key]);
     }
   }
 
@@ -142,7 +142,7 @@ export async function logApiError(
   method: string,
   statusCode: number,
   userId?: string,
-  requestBody?: any
+  requestBody?: Record<string, unknown>
 ): Promise<string | null> {
   const errorType =
     statusCode === 401

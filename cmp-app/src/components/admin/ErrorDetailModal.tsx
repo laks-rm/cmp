@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X, Check, User, Globe, Code, Clock, AlertTriangle } from "lucide-react";
-import { ErrorLog, ErrorType, ErrorSeverity } from "@prisma/client";
+import type { ErrorLog } from "@prisma/client";
 import toast from "@/lib/toast";
 import { format } from "date-fns";
 
@@ -62,7 +62,7 @@ export function ErrorDetailModal({ isOpen, error, onClose, onUpdate }: ErrorDeta
       setResolutionNotes("");
       onUpdate();
       onClose();
-    } catch (err) {
+    } catch {
       toast.error("Failed to update error status");
     } finally {
       setResolving(false);

@@ -86,7 +86,7 @@ export async function PATCH(
     const body = await req.json();
     const data = updateErrorSchema.parse(body);
 
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
 
     if (data.resolved !== undefined) {
       updateData.resolved = data.resolved;

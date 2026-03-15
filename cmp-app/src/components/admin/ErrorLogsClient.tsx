@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { AlertTriangle, Search, Filter, RefreshCw, Eye, CheckCircle, XCircle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Search, RefreshCw, Eye, CheckCircle, XCircle } from "lucide-react";
 import { ErrorType, ErrorSeverity } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { ErrorDetailModal } from "./ErrorDetailModal";
 import { format } from "date-fns";
 import toast from "@/lib/toast";
@@ -19,7 +20,7 @@ type ErrorLog = {
   httpMethod: string | null;
   statusCode: number | null;
   apiEndpoint: string | null;
-  requestBody: any;
+  requestBody: Prisma.JsonValue | null;
   environment: string;
   appVersion: string | null;
   severity: ErrorSeverity;
@@ -66,7 +67,7 @@ export function ErrorLogsClient() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
-  const fetchErrors = async () => {
+  const fetchErrors = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams({
@@ -86,16 +87,16 @@ export function ErrorLogsClient() {
       setErrors(data.errors);
       setTotalPages(data.pagination.totalPages);
       setTotal(data.pagination.total);
-    } catch (error) {
+    } catch {
       toast.error("Failed to load error logs");
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, search, errorTypeFilter, severityFilter, resolvedFilter]);
 
   useEffect(() => {
     fetchErrors();
-  }, [page, search, errorTypeFilter, severityFilter, resolvedFilter]);
+  }, [page, search, errorTypeFilter, severityFilter, resolvedFilter, fetchErrors]);
 
   const handleViewDetails = (error: ErrorLog) => {
     setSelectedError(error);

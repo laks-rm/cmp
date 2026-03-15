@@ -11,7 +11,7 @@ import { ErrorType, ErrorSeverity } from "@prisma/client";
  */
 
 // Enhanced toast.error that logs to database
-const enhancedToastError = (message: string, options?: any) => {
+const enhancedToastError = (message: string, options?: Record<string, unknown>) => {
   // Log to database (async, non-blocking)
   logError({
     error: new Error(message),
@@ -31,7 +31,7 @@ const enhancedToastError = (message: string, options?: any) => {
 // Create enhanced toast object that matches react-hot-toast API
 const toast = Object.assign(
   // Default function
-  (message: string, options?: any) => originalToast(message, options),
+  (message: string, options?: Record<string, unknown>) => originalToast(message, options),
   {
     // Enhanced error method (logs to DB)
     error: enhancedToastError,

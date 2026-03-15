@@ -36,8 +36,7 @@ if (!isDevelopment) {
 const nextConfig = {
   output: "standalone",
   typescript: {
-    // Temporarily ignore build errors due to stack overflow with complex types
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   async headers() {
     return [

@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Build where clause
-    const where: any = {};
+    const where: Record<string, unknown> = {};
 
     if (params.errorType) {
       where.errorType = params.errorType as ErrorType;
@@ -111,13 +111,14 @@ export async function GET(req: NextRequest) {
     }
 
     if (params.startDate || params.endDate) {
-      where.createdAt = {};
+      const createdAtFilter: { gte?: Date; lte?: Date } = {};
       if (params.startDate) {
-        where.createdAt.gte = new Date(params.startDate);
+        createdAtFilter.gte = new Date(params.startDate);
       }
       if (params.endDate) {
-        where.createdAt.lte = new Date(params.endDate);
+        createdAtFilter.lte = new Date(params.endDate);
       }
+      where.createdAt = createdAtFilter;
     }
 
     if (params.search) {

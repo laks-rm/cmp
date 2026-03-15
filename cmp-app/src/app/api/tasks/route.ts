@@ -156,7 +156,7 @@ export async function GET(req: NextRequest) {
         byGroup.get(key)!.push(t);
       }
       const earliestPerGroup: typeof all = [];
-      for (const group of byGroup.values()) {
+      for (const group of Array.from(byGroup.values())) {
         const sorted = [...group].sort((a, b) => {
           if (a.dueDate === null && b.dueDate === null) return 0;
           if (a.dueDate === null) return 1;

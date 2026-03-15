@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, BookOpen, CheckSquare, Calendar, FileText, AlertTriangle, BarChart3, Clock, Settings, ChevronDown, Globe, AlertOctagon } from "lucide-react";
+import { LayoutDashboard, BookOpen, CheckSquare, Calendar, FileText, AlertTriangle, BarChart3, Clock, Settings, ChevronDown, Globe, AlertOctagon, type LucideIcon } from "lucide-react";
 import { useEntity } from "@/contexts/EntityContext";
 
 type SidebarProps = {
@@ -20,7 +20,16 @@ type SidebarProps = {
   allowedHrefs?: string[];
 };
 
-const NAV_ITEMS = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  section: string;
+  badge?: number;
+  superAdminOnly?: boolean;
+};
+
+const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Overview", icon: LayoutDashboard, section: "main" },
   { href: "/sources", label: "Sources", icon: BookOpen, section: "manage" },
   { href: "/tasks", label: "Task Tracker", icon: CheckSquare, section: "manage" },
@@ -51,12 +60,12 @@ export function Sidebar({ user, entities, teams, allowedHrefs }: SidebarProps) {
         // Filter by allowed hrefs
         if (!allowedHrefs.includes(item.href)) return false;
         // Filter super admin only items
-        if ((item as any).superAdminOnly && user.roleName !== "SUPER_ADMIN") return false;
+        if (item.superAdminOnly && user.roleName !== "SUPER_ADMIN") return false;
         return true;
       })
     : NAV_ITEMS.filter((item) => {
         // Filter super admin only items
-        if ((item as any).superAdminOnly && user.roleName !== "SUPER_ADMIN") return false;
+        if (item.superAdminOnly && user.roleName !== "SUPER_ADMIN") return false;
         return true;
       });
 

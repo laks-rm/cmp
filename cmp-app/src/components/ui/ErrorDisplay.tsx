@@ -42,12 +42,6 @@ export function ErrorDisplay({
     inline: "flex items-center justify-center p-4",
   };
 
-  const cardClasses = {
-    page: "w-full max-w-[500px]",
-    modal: "w-full max-w-[500px]",
-    inline: "w-full max-w-[400px]",
-  };
-
   const iconSizes = {
     page: { circle: 80, icon: 40 },
     modal: { circle: 80, icon: 40 },
