@@ -140,6 +140,22 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
   const [showAddItemForm, setShowAddItemForm] = useState(false);
   const [addingTaskToItemId, setAddingTaskToItemId] = useState<string | null>(null);
   
+  // Existing task management
+  const [expandedExistingItems, setExpandedExistingItems] = useState<Set<string>>(new Set());
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editTaskForm, setEditTaskForm] = useState({
+    name: "",
+    description: "",
+    expectedOutcome: "",
+    riskRating: "MEDIUM",
+    responsibleTeamId: "",
+    picId: "",
+    reviewerId: "",
+    evidenceRequired: false,
+    narrativeRequired: false,
+    reviewRequired: true,
+  });
+  
   // Step 2: Input Method Selection
   type InputMethod = "ai-extract" | "spreadsheet" | "one-by-one";
   const [inputMethod, setInputMethod] = useState<InputMethod>("ai-extract");
@@ -283,6 +299,115 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     }
 
     return groups;
+  };
+
+  // Helper: Format frequency for display
+  const formatFrequency = (freq: string) => {
+    const map: Record<string, string> = {
+      DAILY: "Daily",
+      WEEKLY: "Weekly",
+      MONTHLY: "Monthly",
+      QUARTERLY: "Quarterly",
+      SEMI_ANNUAL: "Semi-Annual",
+      ANNUAL: "Annual",
+      BIENNIAL: "Biennial",
+      ONE_TIME: "One-Time",
+      ADHOC: "Ad-hoc",
+    };
+    return map[freq] || freq;
+  };
+
+  // Toggle expand/collapse for existing items
+  const toggleExistingItem = (itemId: string) => {
+    setExpandedExistingItems((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  // Start editing an existing task
+  const startEditingTask = (task: TaskDefinition) => {
+    setEditingTaskId(task.tempId);
+    setEditTaskForm({
+      name: task.name,
+      description: task.description,
+      expectedOutcome: task.expectedOutcome,
+      riskRating: task.riskRating,
+      responsibleTeamId: task.responsibleTeamId,
+      picId: task.picId,
+      reviewerId: task.reviewerId,
+      evidenceRequired: task.evidenceRequired,
+      narrativeRequired: task.narrativeRequired,
+      reviewRequired: task.reviewRequired,
+    });
+  };
+
+  // Cancel editing
+  const cancelEditingTask = () => {
+    setEditingTaskId(null);
+    setEditTaskForm({
+      name: "",
+      description: "",
+      expectedOutcome: "",
+      riskRating: "MEDIUM",
+      responsibleTeamId: "",
+      picId: "",
+      reviewerId: "",
+      evidenceRequired: false,
+      narrativeRequired: false,
+      reviewRequired: true,
+    });
+  };
+
+  // Save task metadata edits
+  const saveTaskEdit = async (taskTempId: string, itemId: string) => {
+    if (!existingSource?.id) return;
+
+    // Extract actual task ID from tempId (format: "existing-task-{id}")
+    const taskId = taskTempId.replace("existing-task-", "");
+    
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editTaskForm.name,
+          description: editTaskForm.description || null,
+          expectedOutcome: editTaskForm.expectedOutcome || null,
+          riskRating: editTaskForm.riskRating,
+          responsibleTeamId: editTaskForm.responsibleTeamId || null,
+          picId: editTaskForm.picId || null,
+          reviewerId: editTaskForm.reviewerId || null,
+          evidenceRequired: editTaskForm.evidenceRequired,
+          narrativeRequired: editTaskForm.narrativeRequired,
+          reviewRequired: editTaskForm.reviewRequired,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update task");
+      }
+
+      toast.success("Task updated successfully");
+      
+      // Refetch items to show updated data
+      await fetchExistingItems(existingSource.id);
+      
+      // Clear edit state
+      cancelEditingTask();
+    } catch (error) {
+      console.error("Failed to update task:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to update task");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Auto-sync spreadsheet to items array
@@ -2364,52 +2489,366 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                       </h4>
                       <div className="rounded-[14px] border p-4" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
                         <div className="space-y-2">
-                          {items.map((item) => (
-                            <div
-                              key={item.tempId}
-                              className="rounded-[14px] border bg-white p-4"
-                              style={{ borderColor: "var(--border)" }}
-                            >
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-3">
-                                    <span
-                                      className="font-mono text-sm font-medium"
-                                      style={{ color: "var(--text-primary)" }}
-                                    >
-                                      {item.reference}
-                                    </span>
-                                    <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                      {item.title}
-                                    </span>
-                                    {item.isInformational ? (
+                          {items.map((item) => {
+                            const isExpanded = expandedExistingItems.has(item.id || item.tempId);
+                            
+                            return (
+                              <div
+                                key={item.tempId}
+                                className="rounded-[14px] border bg-white p-4"
+                                style={{ borderColor: "var(--border)" }}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-3">
+                                      {/* Expand/Collapse Button */}
+                                      {!item.isInformational && item.tasks.length > 0 && (
+                                        <button
+                                          onClick={() => toggleExistingItem(item.id || item.tempId)}
+                                          className="rounded-lg p-1 transition-colors hover:bg-[var(--bg-subtle)]"
+                                          style={{ color: "var(--text-secondary)" }}
+                                        >
+                                          <ChevronDown
+                                            size={16}
+                                            className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                                          />
+                                        </button>
+                                      )}
+                                      
                                       <span
-                                        className="rounded-full px-2 py-0.5 text-xs"
-                                        style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-muted)" }}
+                                        className="font-mono text-sm font-medium"
+                                        style={{ color: "var(--text-primary)" }}
                                       >
-                                        Informational — no tasks
+                                        {item.reference}
                                       </span>
-                                    ) : (
-                                      <span
-                                        className="rounded-full px-2 py-0.5 text-xs font-medium"
-                                        style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
-                                      >
-                                        {item.tasks.length} task{item.tasks.length !== 1 ? "s" : ""}
+                                      <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                        {item.title}
                                       </span>
+                                      {item.isInformational ? (
+                                        <span
+                                          className="rounded-full px-2 py-0.5 text-xs"
+                                          style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-muted)" }}
+                                        >
+                                          Informational — no tasks
+                                        </span>
+                                      ) : (
+                                        <span
+                                          className="rounded-full px-2 py-0.5 text-xs font-medium"
+                                          style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
+                                        >
+                                          {item.tasks.length} task{item.tasks.length !== 1 ? "s" : ""}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {item.description && (
+                                      <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+                                        {item.description}
+                                      </p>
                                     )}
                                   </div>
-                                  {item.description && (
-                                    <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-                                      {item.description}
-                                    </p>
-                                  )}
                                 </div>
+
+                                {/* Expanded Task List */}
+                                {isExpanded && item.tasks.length > 0 && (
+                                  <div className="mt-4 space-y-3 border-t pt-4" style={{ borderColor: "var(--border)" }}>
+                                    {item.tasks.map((task) => {
+                                      const isEditing = editingTaskId === task.tempId;
+                                      
+                                      return (
+                                        <div
+                                          key={task.tempId}
+                                          className="rounded-lg border p-3"
+                                          style={{ 
+                                            borderColor: "var(--border)", 
+                                            backgroundColor: isEditing ? "var(--blue-light)" : "var(--bg-subtle)" 
+                                          }}
+                                        >
+                                          {isEditing ? (
+                                            /* Edit Mode */
+                                            <div className="space-y-3">
+                                              <div className="flex items-center justify-between">
+                                                <h5 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                                  Edit Task Metadata
+                                                </h5>
+                                                <button
+                                                  onClick={cancelEditingTask}
+                                                  className="text-xs" 
+                                                  style={{ color: "var(--text-muted)" }}
+                                                >
+                                                  Cancel
+                                                </button>
+                                              </div>
+
+                                              {/* Editable Fields */}
+                                              <div className="grid grid-cols-2 gap-3">
+                                                <div className="col-span-2">
+                                                  <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+                                                    Task Name <span style={{ color: "var(--red)" }}>*</span>
+                                                  </label>
+                                                  <input
+                                                    type="text"
+                                                    value={editTaskForm.name}
+                                                    onChange={(e) => setEditTaskForm({ ...editTaskForm, name: e.target.value })}
+                                                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                                                    style={{ borderColor: "var(--border)" }}
+                                                  />
+                                                </div>
+
+                                                <div className="col-span-2">
+                                                  <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+                                                    Description
+                                                  </label>
+                                                  <textarea
+                                                    value={editTaskForm.description}
+                                                    onChange={(e) => setEditTaskForm({ ...editTaskForm, description: e.target.value })}
+                                                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                                                    style={{ borderColor: "var(--border)" }}
+                                                    rows={2}
+                                                  />
+                                                </div>
+
+                                                <div>
+                                                  <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+                                                    Risk Rating
+                                                  </label>
+                                                  <select
+                                                    value={editTaskForm.riskRating}
+                                                    onChange={(e) => setEditTaskForm({ ...editTaskForm, riskRating: e.target.value })}
+                                                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                                                    style={{ borderColor: "var(--border)" }}
+                                                  >
+                                                    {RISK_RATINGS.map((rating) => (
+                                                      <option key={rating} value={rating}>
+                                                        {rating}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+
+                                                <div>
+                                                  <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+                                                    Responsible Team
+                                                  </label>
+                                                  <select
+                                                    value={editTaskForm.responsibleTeamId}
+                                                    onChange={(e) => setEditTaskForm({ ...editTaskForm, responsibleTeamId: e.target.value })}
+                                                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                                                    style={{ borderColor: "var(--border)" }}
+                                                  >
+                                                    <option value="">None</option>
+                                                    {teams.map((team) => (
+                                                      <option key={team.id} value={team.id}>
+                                                        {team.name}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+
+                                                <div>
+                                                  <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+                                                    PIC
+                                                  </label>
+                                                  <select
+                                                    value={editTaskForm.picId}
+                                                    onChange={(e) => setEditTaskForm({ ...editTaskForm, picId: e.target.value })}
+                                                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                                                    style={{ borderColor: "var(--border)" }}
+                                                  >
+                                                    <option value="">None</option>
+                                                    {users.map((user) => (
+                                                      <option key={user.id} value={user.id}>
+                                                        {user.name}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+
+                                                <div>
+                                                  <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+                                                    Reviewer
+                                                  </label>
+                                                  <select
+                                                    value={editTaskForm.reviewerId}
+                                                    onChange={(e) => setEditTaskForm({ ...editTaskForm, reviewerId: e.target.value })}
+                                                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                                                    style={{ borderColor: "var(--border)" }}
+                                                  >
+                                                    <option value="">None</option>
+                                                    {users
+                                                      .filter((u) => 
+                                                        u.teamMemberships?.some((tm) => tm.teamId === editTaskForm.responsibleTeamId)
+                                                      )
+                                                      .map((user) => (
+                                                        <option key={user.id} value={user.id}>
+                                                          {user.name}
+                                                        </option>
+                                                      ))}
+                                                  </select>
+                                                </div>
+                                              </div>
+
+                                              {/* Checkboxes */}
+                                              <div className="flex flex-wrap gap-4">
+                                                <label className="flex items-center gap-2 text-xs">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={editTaskForm.evidenceRequired}
+                                                    onChange={(e) => setEditTaskForm({ ...editTaskForm, evidenceRequired: e.target.checked })}
+                                                    className="rounded"
+                                                  />
+                                                  <span style={{ color: "var(--text-primary)" }}>Evidence Required</span>
+                                                </label>
+                                                <label className="flex items-center gap-2 text-xs">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={editTaskForm.narrativeRequired}
+                                                    onChange={(e) => setEditTaskForm({ ...editTaskForm, narrativeRequired: e.target.checked })}
+                                                    className="rounded"
+                                                  />
+                                                  <span style={{ color: "var(--text-primary)" }}>Narrative Required</span>
+                                                </label>
+                                                <label className="flex items-center gap-2 text-xs">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={editTaskForm.reviewRequired}
+                                                    onChange={(e) => setEditTaskForm({ ...editTaskForm, reviewRequired: e.target.checked })}
+                                                    className="rounded"
+                                                  />
+                                                  <span style={{ color: "var(--text-primary)" }}>Review Required</span>
+                                                </label>
+                                              </div>
+
+                                              {/* Locked Fields Notice */}
+                                              <div className="rounded-lg border p-2" style={{ borderColor: "var(--amber)", backgroundColor: "var(--amber-light)" }}>
+                                                <div className="flex gap-2">
+                                                  <AlertCircle size={14} style={{ color: "var(--amber)" }} className="flex-shrink-0 mt-0.5" />
+                                                  <p className="text-xs" style={{ color: "var(--amber-dark)" }}>
+                                                    <strong>Schedule fields locked:</strong> Frequency, due date, and recurrence settings cannot be edited because task instances have already been generated.
+                                                  </p>
+                                                </div>
+                                              </div>
+
+                                              {/* Action Buttons */}
+                                              <div className="flex justify-end gap-2">
+                                                <button
+                                                  onClick={cancelEditingTask}
+                                                  className="rounded-lg border px-3 py-1.5 text-sm font-medium"
+                                                  style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                                                >
+                                                  Cancel
+                                                </button>
+                                                <button
+                                                  onClick={() => saveTaskEdit(task.tempId, item.id || item.tempId)}
+                                                  disabled={loading || !editTaskForm.name.trim()}
+                                                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-white"
+                                                  style={{ 
+                                                    backgroundColor: loading || !editTaskForm.name.trim() ? "var(--text-muted)" : "var(--blue)",
+                                                    cursor: loading || !editTaskForm.name.trim() ? "not-allowed" : "pointer"
+                                                  }}
+                                                >
+                                                  {loading ? "Saving..." : "Save Changes"}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            /* View Mode */
+                                            <div className="space-y-2">
+                                              <div className="flex items-start justify-between">
+                                                <div className="flex-1">
+                                                  <div className="font-medium text-sm" style={{ color: "var(--text-primary)" }}>
+                                                    {task.name}
+                                                  </div>
+                                                  {task.description && (
+                                                    <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                                                      {task.description}
+                                                    </p>
+                                                  )}
+                                                </div>
+                                                <button
+                                                  onClick={() => startEditingTask(task)}
+                                                  className="ml-2 rounded-lg px-2 py-1 text-xs font-medium transition-colors"
+                                                  style={{ 
+                                                    color: "var(--blue)", 
+                                                    backgroundColor: "transparent",
+                                                    border: "1px solid var(--blue)"
+                                                  }}
+                                                >
+                                                  Edit
+                                                </button>
+                                              </div>
+
+                                              {/* Task Metadata Display */}
+                                              <div className="flex flex-wrap gap-2">
+                                                {/* Read-only Schedule Fields */}
+                                                <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: "white", border: "1px solid var(--border)" }}>
+                                                  <strong>Frequency:</strong> {formatFrequency(task.frequency)}
+                                                </span>
+                                                <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: "white", border: "1px solid var(--border)" }}>
+                                                  <strong>Risk:</strong> {task.riskRating}
+                                                </span>
+                                                {task.dueDate && (
+                                                  <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: "white", border: "1px solid var(--border)" }}>
+                                                    <strong>Due:</strong> {new Date(task.dueDate).toLocaleDateString()}
+                                                  </span>
+                                                )}
+                                                {task.responsibleTeamId && (
+                                                  <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: "white", border: "1px solid var(--border)" }}>
+                                                    <strong>Team:</strong> {teams.find((t) => t.id === task.responsibleTeamId)?.name || "Unknown"}
+                                                  </span>
+                                                )}
+                                                {task.picId && (
+                                                  <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: "white", border: "1px solid var(--border)" }}>
+                                                    <strong>PIC:</strong> {users.find((u) => u.id === task.picId)?.name || "Unknown"}
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              {/* Requirements Indicators */}
+                                              {(task.evidenceRequired || task.narrativeRequired || task.reviewRequired) && (
+                                                <div className="flex gap-2 text-xs">
+                                                  {task.evidenceRequired && (
+                                                    <span className="flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                                                      <CheckCircle size={12} />
+                                                      Evidence
+                                                    </span>
+                                                  )}
+                                                  {task.narrativeRequired && (
+                                                    <span className="flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                                                      <CheckCircle size={12} />
+                                                      Narrative
+                                                    </span>
+                                                  )}
+                                                  {task.reviewRequired && (
+                                                    <span className="flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                                                      <CheckCircle size={12} />
+                                                      Review
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+
+                                    {/* Info Note */}
+                                    <div className="mt-3 rounded-lg border p-2" style={{ borderColor: "var(--blue)", backgroundColor: "var(--blue-light)" }}>
+                                      <div className="flex gap-2">
+                                        <AlertCircle size={14} style={{ color: "var(--blue)" }} className="flex-shrink-0 mt-0.5" />
+                                        <p className="text-xs" style={{ color: "var(--blue-dark)" }}>
+                                          You can edit task metadata (name, description, assignments, etc.). Schedule-critical fields remain locked to protect already-generated task instances.
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                         <p className="text-xs mt-3" style={{ color: "var(--text-muted)" }}>
-                          Add new clauses and tasks below. Existing items above will not be modified.
+                          Add new clauses and tasks below. Existing items above will not be modified unless you explicitly edit them.
                         </p>
                       </div>
                     </div>
