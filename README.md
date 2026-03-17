@@ -239,6 +239,39 @@ Critical entities (Task, Finding, Source) use soft delete instead of hard delete
 - [ ] Admin panel (user, role, entity, team management)
 - [ ] Complete SourceWizard refactoring (see below)
 
+## ✨ Recent Features
+
+### Existing Task Editing in SourceWizard (2026-03-17)
+
+When adding items to an existing source, users can now **view and edit existing tasks** directly in the "Add Items & Tasks" modal.
+
+**Features:**
+- ✅ **Expandable clauses** - Click chevron to view all tasks under each clause
+- ✅ **Task details** - View frequency, risk rating, assignments, requirements
+- ✅ **Safe metadata editing** - Edit task name, description, risk, team, PIC, reviewer, requirements
+- ✅ **Schedule field protection** - Frequency, due date, recurrence locked (protects generated instances)
+- ✅ **Real-time updates** - Changes saved immediately via API
+- ✅ **Clear visual indicators** - Amber warning for locked fields, blue info for edit capabilities
+
+**Why?**
+- Fix common mistakes (typos, wrong assignments) without leaving wizard
+- Better visibility into existing tasks
+- Maintain data integrity by protecting schedule-critical fields
+
+**Documentation:**
+- 📘 **Comprehensive Guide**: `docs/FEATURE_EXISTING_TASK_EDITING.md`
+- 📋 **Quick Reference**: `docs/QUICK_REF_EXISTING_TASK_EDITING.md`
+- 📄 **Summary**: `FEATURE_EXISTING_TASK_EDITING_SUMMARY.md`
+
+**What You Can Edit** (Safe Fields):
+- Task name, description, expected outcome
+- Risk rating, responsible team, PIC, reviewer
+- Evidence/narrative/review requirements
+
+**What's Locked** (Protected Fields):
+- Frequency, due date, recurrence settings
+- (Editing these would break already-generated task instances)
+
 ## 🏗️ Code Quality & Refactoring
 
 ### Service Layer Architecture (✨ New)
