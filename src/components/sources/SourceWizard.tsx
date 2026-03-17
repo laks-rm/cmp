@@ -2583,8 +2583,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                             {isEditing ? (
                                               /* Edit Mode - Full Form */
                                               <div className="border rounded-lg p-3" style={{ borderColor: "var(--border)" }}>
-                                            /* Edit Mode */
-                                            <div className="space-y-3">
+                                                <div className="space-y-3">
                                               <div className="flex items-center justify-between">
                                                 <h5 className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
                                                   Edit Task Metadata
@@ -2769,6 +2768,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                                 </button>
                                               </div>
                                             </div>
+                                          </div>
                                           ) : (
                                             /* View Mode - Table Row */
                                             <div 
