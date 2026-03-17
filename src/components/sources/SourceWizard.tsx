@@ -2550,20 +2550,39 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
 
                                 {/* Expanded Task List */}
                                 {isExpanded && item.tasks.length > 0 && (
-                                  <div className="mt-4 space-y-3 border-t pt-4" style={{ borderColor: "var(--border)" }}>
-                                    {item.tasks.map((task) => {
-                                      const isEditing = editingTaskId === task.tempId;
-                                      
-                                      return (
-                                        <div
-                                          key={task.tempId}
-                                          className="rounded-lg border p-3"
-                                          style={{ 
-                                            borderColor: "var(--border)", 
-                                            backgroundColor: isEditing ? "var(--blue-light)" : "var(--bg-subtle)" 
-                                          }}
-                                        >
-                                          {isEditing ? (
+                                  <div className="mt-4 border-t pt-4" style={{ borderColor: "var(--border)" }}>
+                                    {/* Table Header */}
+                                    <div 
+                                      className="grid grid-cols-[auto_1fr_100px_90px_140px_120px_150px_60px_60px_40px] gap-2 px-3 py-2 text-xs font-medium uppercase tracking-wide"
+                                      style={{ color: "var(--text-secondary)", backgroundColor: "var(--bg-subtle)" }}
+                                    >
+                                      <div></div> {/* Checkbox spacer */}
+                                      <div>TASK NAME</div>
+                                      <div>FREQUENCY</div>
+                                      <div>RISK</div>
+                                      <div>DEPT / TEAM</div>
+                                      <div>PIC</div>
+                                      <div>DUE DATE</div>
+                                      <div>EVID</div>
+                                      <div>REV</div>
+                                      <div></div> {/* Actions spacer */}
+                                    </div>
+
+                                    {/* Task Rows */}
+                                    <div className="space-y-1">
+                                      {item.tasks.map((task) => {
+                                        const isEditing = editingTaskId === task.tempId;
+                                        
+                                        return (
+                                          <div
+                                            key={task.tempId}
+                                            style={{ 
+                                              backgroundColor: isEditing ? "var(--blue-light)" : "white"
+                                            }}
+                                          >
+                                            {isEditing ? (
+                                              /* Edit Mode - Full Form */
+                                              <div className="border rounded-lg p-3" style={{ borderColor: "var(--border)" }}>
                                             /* Edit Mode */
                                             <div className="space-y-3">
                                               <div className="flex items-center justify-between">
@@ -2751,93 +2770,159 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                               </div>
                                             </div>
                                           ) : (
-                                            /* View Mode */
-                                            <div className="space-y-2">
-                                              <div className="flex items-start justify-between">
-                                                <div className="flex-1">
-                                                  <div className="font-medium text-sm" style={{ color: "var(--text-primary)" }}>
-                                                    {task.name}
-                                                  </div>
-                                                  {task.description && (
-                                                    <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
-                                                      {task.description}
-                                                    </p>
-                                                  )}
-                                                </div>
+                                            /* View Mode - Table Row */
+                                            <div 
+                                              className="grid grid-cols-[auto_1fr_100px_90px_140px_120px_150px_60px_60px_40px] gap-2 items-center px-3 py-2 border-b text-sm"
+                                              style={{ borderColor: "var(--border)" }}
+                                            >
+                                              {/* Checkbox */}
+                                              <div>
+                                                <input type="checkbox" className="rounded" />
+                                              </div>
+
+                                              {/* Task Name */}
+                                              <div className="font-medium" style={{ color: "var(--text-primary)" }}>
+                                                {task.name}
+                                              </div>
+
+                                              {/* Frequency - Read Only (Locked) */}
+                                              <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                                                {formatFrequency(task.frequency)}
+                                              </div>
+
+                                              {/* Risk Rating */}
+                                              <div>
+                                                <select
+                                                  value={task.riskRating}
+                                                  onChange={(e) => {
+                                                    // Quick update for risk
+                                                    const taskId = task.tempId.replace("existing-task-", "");
+                                                    fetch(`/api/tasks/${taskId}`, {
+                                                      method: "PATCH",
+                                                      headers: { "Content-Type": "application/json" },
+                                                      body: JSON.stringify({ riskRating: e.target.value }),
+                                                    }).then(() => fetchExistingItems(existingSource?.id || ""));
+                                                  }}
+                                                  className="rounded border px-2 py-1 text-xs w-full"
+                                                  style={{ borderColor: "var(--border)" }}
+                                                >
+                                                  {RISK_RATINGS.map((r) => (
+                                                    <option key={r} value={r}>{r}</option>
+                                                  ))}
+                                                </select>
+                                              </div>
+
+                                              {/* Dept / Team */}
+                                              <div>
+                                                <select
+                                                  value={task.responsibleTeamId || ""}
+                                                  onChange={(e) => {
+                                                    const taskId = task.tempId.replace("existing-task-", "");
+                                                    fetch(`/api/tasks/${taskId}`, {
+                                                      method: "PATCH",
+                                                      headers: { "Content-Type": "application/json" },
+                                                      body: JSON.stringify({ responsibleTeamId: e.target.value || null }),
+                                                    }).then(() => fetchExistingItems(existingSource?.id || ""));
+                                                  }}
+                                                  className="rounded border px-2 py-1 text-xs w-full"
+                                                  style={{ borderColor: "var(--border)" }}
+                                                >
+                                                  <option value="">None</option>
+                                                  {teams.map((team) => (
+                                                    <option key={team.id} value={team.id}>{team.name}</option>
+                                                  ))}
+                                                </select>
+                                              </div>
+
+                                              {/* PIC */}
+                                              <div>
+                                                <select
+                                                  value={task.picId || ""}
+                                                  onChange={(e) => {
+                                                    const taskId = task.tempId.replace("existing-task-", "");
+                                                    fetch(`/api/tasks/${taskId}`, {
+                                                      method: "PATCH",
+                                                      headers: { "Content-Type": "application/json" },
+                                                      body: JSON.stringify({ picId: e.target.value || null }),
+                                                    }).then(() => fetchExistingItems(existingSource?.id || ""));
+                                                  }}
+                                                  className="rounded border px-2 py-1 text-xs w-full"
+                                                  style={{ borderColor: "var(--border)" }}
+                                                >
+                                                  <option value="">None</option>
+                                                  {users.map((user) => (
+                                                    <option key={user.id} value={user.id}>{user.name}</option>
+                                                  ))}
+                                                </select>
+                                              </div>
+
+                                              {/* Due Date - Read Only (Locked) */}
+                                              <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                                                {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "—"}
+                                              </div>
+
+                                              {/* Evidence Required */}
+                                              <div className="flex items-center justify-center">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={task.evidenceRequired || false}
+                                                  onChange={(e) => {
+                                                    const taskId = task.tempId.replace("existing-task-", "");
+                                                    fetch(`/api/tasks/${taskId}`, {
+                                                      method: "PATCH",
+                                                      headers: { "Content-Type": "application/json" },
+                                                      body: JSON.stringify({ evidenceRequired: e.target.checked }),
+                                                    }).then(() => fetchExistingItems(existingSource?.id || ""));
+                                                  }}
+                                                  className="rounded"
+                                                />
+                                              </div>
+
+                                              {/* Review Required */}
+                                              <div className="flex items-center justify-center">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={task.reviewRequired || false}
+                                                  onChange={(e) => {
+                                                    const taskId = task.tempId.replace("existing-task-", "");
+                                                    fetch(`/api/tasks/${taskId}`, {
+                                                      method: "PATCH",
+                                                      headers: { "Content-Type": "application/json" },
+                                                      body: JSON.stringify({ reviewRequired: e.target.checked }),
+                                                    }).then(() => fetchExistingItems(existingSource?.id || ""));
+                                                  }}
+                                                  className="rounded"
+                                                />
+                                              </div>
+
+                                              {/* Edit Button */}
+                                              <div>
                                                 <button
                                                   onClick={() => startEditingTask(task)}
-                                                  className="ml-2 rounded-lg px-2 py-1 text-xs font-medium transition-colors"
-                                                  style={{ 
-                                                    color: "var(--blue)", 
-                                                    backgroundColor: "transparent",
-                                                    border: "1px solid var(--blue)"
-                                                  }}
+                                                  className="rounded p-1 transition-colors hover:bg-[var(--blue-light)]"
+                                                  style={{ color: "var(--blue)" }}
+                                                  title="Edit full details"
                                                 >
-                                                  Edit
+                                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                                  </svg>
                                                 </button>
                                               </div>
-
-                                              {/* Task Metadata Display */}
-                                              <div className="flex flex-wrap gap-2">
-                                                {/* Read-only Schedule Fields */}
-                                                <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: "white", border: "1px solid var(--border)" }}>
-                                                  <strong>Frequency:</strong> {formatFrequency(task.frequency)}
-                                                </span>
-                                                <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: "white", border: "1px solid var(--border)" }}>
-                                                  <strong>Risk:</strong> {task.riskRating}
-                                                </span>
-                                                {task.dueDate && (
-                                                  <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: "white", border: "1px solid var(--border)" }}>
-                                                    <strong>Due:</strong> {new Date(task.dueDate).toLocaleDateString()}
-                                                  </span>
-                                                )}
-                                                {task.responsibleTeamId && (
-                                                  <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: "white", border: "1px solid var(--border)" }}>
-                                                    <strong>Team:</strong> {teams.find((t) => t.id === task.responsibleTeamId)?.name || "Unknown"}
-                                                  </span>
-                                                )}
-                                                {task.picId && (
-                                                  <span className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: "white", border: "1px solid var(--border)" }}>
-                                                    <strong>PIC:</strong> {users.find((u) => u.id === task.picId)?.name || "Unknown"}
-                                                  </span>
-                                                )}
-                                              </div>
-
-                                              {/* Requirements Indicators */}
-                                              {(task.evidenceRequired || task.narrativeRequired || task.reviewRequired) && (
-                                                <div className="flex gap-2 text-xs">
-                                                  {task.evidenceRequired && (
-                                                    <span className="flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
-                                                      <CheckCircle size={12} />
-                                                      Evidence
-                                                    </span>
-                                                  )}
-                                                  {task.narrativeRequired && (
-                                                    <span className="flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
-                                                      <CheckCircle size={12} />
-                                                      Narrative
-                                                    </span>
-                                                  )}
-                                                  {task.reviewRequired && (
-                                                    <span className="flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
-                                                      <CheckCircle size={12} />
-                                                      Review
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              )}
                                             </div>
                                           )}
                                         </div>
                                       );
                                     })}
 
-                                    {/* Info Note */}
+                                    </div>
+
+                                    {/* Info Notice */}
                                     <div className="mt-3 rounded-lg border p-2" style={{ borderColor: "var(--blue)", backgroundColor: "var(--blue-light)" }}>
                                       <div className="flex gap-2">
                                         <AlertCircle size={14} style={{ color: "var(--blue)" }} className="flex-shrink-0 mt-0.5" />
                                         <p className="text-xs" style={{ color: "var(--blue-dark)" }}>
-                                          You can edit task metadata (name, description, assignments, etc.). Schedule-critical fields remain locked to protect already-generated task instances.
+                                          Quick edit fields directly in the table. Frequency and due date are locked (already generated). Click edit icon for full details and description.
                                         </p>
                                       </div>
                                     </div>
