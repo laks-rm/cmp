@@ -63,8 +63,8 @@ export async function GET(req: NextRequest, context: { params: { id: string } })
     }
 
     // Check entity access
-    const sourceEntityIds = source.entities.map((e) => e.entityId);
-    const hasAccess = sourceEntityIds.some((id) => session.user.entityIds.includes(id));
+    const sourceEntityIds = source.entities.map((e: { entityId: string }) => e.entityId);
+    const hasAccess = sourceEntityIds.some((id: string) => session.user.entityIds.includes(id));
     if (!hasAccess) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
@@ -104,8 +104,8 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
     }
 
     // Check entity access
-    const sourceEntityIds = existingSource.entities.map((e) => e.entityId);
-    const hasAccess = sourceEntityIds.some((id) => session.user.entityIds.includes(id));
+    const sourceEntityIds = existingSource.entities.map((e: { entityId: string }) => e.entityId);
+    const hasAccess = sourceEntityIds.some((id: string) => session.user.entityIds.includes(id));
     if (!hasAccess) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }

@@ -12,7 +12,10 @@ type DashboardClientProps = {
 };
 
 export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
-  const { selectedEntityId } = useEntity();
+  const { selectedEntityId, selectedEntity } = useEntity();
+
+  // Display entity name or code
+  const entityDisplayName = selectedEntity?.name || selectedEntity?.code || selectedEntityId;
 
   return (
     <div className="space-y-6">
@@ -21,7 +24,7 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
           {greeting}, {firstName}
         </h1>
         <p className="mt-1 text-[13.5px] font-medium" style={{ color: "var(--text-secondary)" }}>
-          {selectedEntityId === "GROUP" ? "Viewing consolidated data across all entities" : `Viewing ${selectedEntityId} entity data`}
+          {selectedEntityId === "GROUP" ? "Viewing consolidated data across all entities" : `Viewing ${entityDisplayName} entity data`}
         </p>
       </div>
 

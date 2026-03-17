@@ -87,7 +87,7 @@ export function ErrorLogsClient() {
       setErrors(data.errors);
       setTotalPages(data.pagination.totalPages);
       setTotal(data.pagination.total);
-    } catch {
+    } catch (error: unknown) {
       toast.error("Failed to load error logs");
     } finally {
       setLoading(false);
@@ -128,8 +128,8 @@ export function ErrorLogsClient() {
           onClick={fetchErrors}
           className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
           style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "white")}
+          onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
+          onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget.style.backgroundColor = "white")}
         >
           <RefreshCw size={16} />
           Refresh
@@ -145,7 +145,7 @@ export function ErrorLogsClient() {
             type="text"
             placeholder="Search errors..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
             className="w-full rounded-lg border py-2 pl-10 pr-4 text-sm transition-colors"
             style={{ borderColor: "var(--border)" }}
           />
@@ -154,7 +154,7 @@ export function ErrorLogsClient() {
         {/* Error Type Filter */}
         <select
           value={errorTypeFilter}
-          onChange={(e) => setErrorTypeFilter(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setErrorTypeFilter(e.target.value)}
           className="rounded-lg border px-4 py-2 text-sm transition-colors"
           style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
         >
@@ -169,7 +169,7 @@ export function ErrorLogsClient() {
         {/* Severity Filter */}
         <select
           value={severityFilter}
-          onChange={(e) => setSeverityFilter(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSeverityFilter(e.target.value)}
           className="rounded-lg border px-4 py-2 text-sm transition-colors"
           style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
         >
@@ -184,7 +184,7 @@ export function ErrorLogsClient() {
         {/* Resolved Filter */}
         <select
           value={resolvedFilter}
-          onChange={(e) => setResolvedFilter(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setResolvedFilter(e.target.value)}
           className="rounded-lg border px-4 py-2 text-sm transition-colors"
           style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
         >
@@ -299,8 +299,8 @@ export function ErrorLogsClient() {
                       onClick={() => handleViewDetails(error)}
                       className="inline-flex items-center gap-1 rounded-lg px-3 py-1 text-xs font-medium transition-colors"
                       style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
-                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                      onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget.style.opacity = "0.8")}
+                      onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget.style.opacity = "1")}
                     >
                       <Eye size={14} />
                       View
@@ -321,7 +321,7 @@ export function ErrorLogsClient() {
           </p>
           <div className="flex gap-2">
             <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setPage((p: number) => Math.max(1, p - 1))}
               disabled={page === 1}
               className="rounded-lg border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
               style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
@@ -329,7 +329,7 @@ export function ErrorLogsClient() {
               Previous
             </button>
             <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => setPage((p: number) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
               className="rounded-lg border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
               style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}

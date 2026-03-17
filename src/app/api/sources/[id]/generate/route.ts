@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { requirePermission } from "@/lib/permissions";
 import { bulkGenerateTasksSchema } from "@/lib/validations/sources";
 import { logAuditEvent } from "@/lib/audit";
@@ -183,8 +184,8 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
       return NextResponse.json({ error: "Source not found" }, { status: 404 });
     }
 
-    const sourceEntityIds = source.entities.map((e) => e.entityId);
-    const hasAccess = sourceEntityIds.some((id) => session.user.entityIds.includes(id));
+    const sourceEntityIds = source.entities.map((e: { entityId: string }) => e.entityId);
+    const hasAccess = sourceEntityIds.some((id: string) => session.user.entityIds.includes(id));
     if (!hasAccess) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
@@ -292,7 +293,7 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
 
       // Batch create all tasks at once
       const createdTasksResult = await tx.task.createMany({
-        data: tasksToCreate,
+        data: tasksToCreate as Prisma.TaskCreateManyInput[],
       });
 
       // Update source status to ACTIVE

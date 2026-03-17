@@ -6,11 +6,13 @@ declare global {
 }
 
 /**
- * Prisma Client with camelCase serialization
+ * Prisma Client with camelCase serialization and connection pooling
  * 
  * Ensures all API responses use consistent camelCase formatting:
  * - Database fields: camelCase (already enforced by schema)
  * - JSON responses: camelCase (enforced by this extension)
+ * 
+ * Connection pooling configured to prevent "too many connections" errors
  * 
  * Example:
  * - createdAt ✅ (correct)
@@ -18,19 +20,23 @@ declare global {
  * - PICId ❌ (incorrect - should be picId)
  */
 
-const prismaClient = new PrismaClient({
-  log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
-});
+// Ensure we only create one Prisma client instance with proper connection pooling
+const createPrismaClient = () => {
+  return new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  });
+};
 
-// Note: Prisma schema already uses camelCase for all fields
-// This client is ready to use without additional transformations
-// All database columns are mapped to camelCase in the schema
-
-export const prisma = prismaClient;
+// Use global singleton pattern to prevent multiple instances
+export const prisma = global.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   global.prisma = prisma;
 }
+
+// Note: Prisma schema already uses camelCase for all fields
+// This client is ready to use without additional transformations
+// All database columns are mapped to camelCase in the schema
 
 /**
  * Type helper to ensure response objects use camelCase

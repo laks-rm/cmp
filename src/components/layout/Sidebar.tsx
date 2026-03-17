@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, BookOpen, CheckSquare, Calendar, FileText, AlertTriangle, BarChart3, Clock, Settings, ChevronDown, Globe, AlertOctagon, type LucideIcon } from "lucide-react";
@@ -51,9 +51,14 @@ const SECTIONS = [
 
 export function Sidebar({ user, entities, teams, allowedHrefs }: SidebarProps) {
   const pathname = usePathname();
-  const { selectedEntityId, selectedTeamId, setEntity, setTeam } = useEntity();
+  const { selectedEntityId, selectedTeamId, setEntity, setTeam, setEntities } = useEntity();
   const [isEntityOpen, setIsEntityOpen] = useState(false);
   const [isTeamOpen, setIsTeamOpen] = useState(false);
+
+  // Populate entities in context when component mounts or entities change
+  useEffect(() => {
+    setEntities(entities);
+  }, [entities, setEntities]);
 
   const visibleItems = allowedHrefs 
     ? NAV_ITEMS.filter((item) => {

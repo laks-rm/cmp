@@ -405,13 +405,13 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
     }
   }, [teamId, teams]);
 
-  // Auto-generate source code from name
+  // Auto-generate source code from name (always regenerate based on name)
   useEffect(() => {
-    if (!existingSource && sourceName && !sourceCode) {
+    if (!existingSource && sourceName) {
       const generated = generateSourceCode(sourceName);
       setSourceCode(generated);
     }
-  }, [sourceName, existingSource, sourceCode]);
+  }, [sourceName, existingSource]);
 
   const fetchTeams = async () => {
     try {
@@ -1536,16 +1536,13 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                   <input
                     type="text"
                     value={sourceCode}
-                    onChange={(e) => {
-                      setSourceCode(e.target.value.toUpperCase());
-                      setSourceCodeError(""); // Clear error on change
-                    }}
-                    onBlur={handleSourceCodeBlur}
+                    disabled
                     placeholder="Auto-generates from name"
-                    className="w-full rounded-lg border px-3 py-2 font-mono text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                    className="w-full rounded-lg border px-3 py-2 font-mono text-sm outline-none cursor-not-allowed"
                     style={{
                       borderColor: sourceCodeError ? "var(--red)" : "var(--border)",
                       color: "var(--text-primary)",
+                      backgroundColor: "var(--bg-subtle)",
                     }}
                   />
                   {isValidatingCode && (

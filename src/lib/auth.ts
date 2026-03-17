@@ -107,8 +107,8 @@ function getProviders() {
           initials: user.initials,
           roleId: user.roleId,
           roleName: user.role.name,
-          entityIds: user.entityAccess.map((access) => access.entityId),
-          teamIds: user.teamMemberships.map((membership) => membership.teamId),
+          entityIds: user.entityAccess.map((access: { entityId: string }) => access.entityId),
+          teamIds: user.teamMemberships.map((membership: { teamId: string }) => membership.teamId),
           timezone: user.timezone,
         };
       },
@@ -174,8 +174,8 @@ export const authOptions: NextAuthOptions = {
         token.initials = dbUser.initials;
         token.roleId = dbUser.roleId;
         token.roleName = dbUser.role.name;
-        token.entityIds = dbUser.entityAccess.map((access) => access.entityId);
-        token.teamIds = dbUser.teamMemberships.map((membership) => membership.teamId);
+        token.entityIds = dbUser.entityAccess.map((access: { entityId: string }) => access.entityId);
+        token.teamIds = dbUser.teamMemberships.map((membership: { teamId: string }) => membership.teamId);
         token.timezone = dbUser.timezone;
         token.lastRefreshAt = Date.now();
       }
@@ -183,16 +183,31 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
     async session({ session, token }) {
-      // If token is invalid or user cleared, force logout
+      // If token is invalid or user cleared, return empty session to force logout
       if (!token?.userId || typeof token.userId !== 'string' || token.userId === "") {
-        return null;
+        return {
+          ...session,
+          user: {
+            name: session.user?.name || '',
+            email: session.user?.email || '',
+            image: session.user?.image || null,
+            userId: '',
+            initials: '',
+            roleId: '',
+            roleName: '',
+            entityIds: [],
+            teamIds: [],
+            timezone: 'UTC',
+          },
+          expires: session.expires,
+        };
       }
 
       session.user = {
-        ...session.user,
+        name: token.name || session.user?.name || '',
+        email: token.email || session.user?.email || '',
+        image: session.user?.image || null,
         userId: token.userId,
-        email: token.email,
-        name: token.name,
         initials: token.initials,
         roleId: token.roleId,
         roleName: token.roleName,

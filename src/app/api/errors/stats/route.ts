@@ -59,7 +59,7 @@ export async function GET() {
       ORDER BY date ASC
     `;
 
-    const trend = trendData.map((item) => ({
+    const trend = trendData.map((item: { date: Date; count: bigint }) => ({
       date: item.date.toISOString().split("T")[0],
       count: Number(item.count),
     }));
@@ -77,7 +77,7 @@ export async function GET() {
     });
 
     const usersWithDetails = await Promise.all(
-      topUsers.map(async (item) => {
+      topUsers.map(async (item: { userId: string | null; _count: number }) => {
         if (!item.userId) return null;
         const user = await prisma.user.findUnique({
           where: { id: item.userId },
@@ -97,16 +97,16 @@ export async function GET() {
         last30d: total30d,
         unresolved,
       },
-      byType: byType.map((item) => ({
+      byType: byType.map((item: { errorType: string; _count: number }) => ({
         type: item.errorType,
         count: item._count,
       })),
-      bySeverity: bySeverity.map((item) => ({
+      bySeverity: bySeverity.map((item: { severity: string; _count: number }) => ({
         severity: item.severity,
         count: item._count,
       })),
       trend,
-      topUsers: usersWithDetails.filter((item) => item !== null),
+      topUsers: usersWithDetails.filter((item: { user: unknown; count: number } | null) => item !== null),
     });
   } catch (error) {
     console.error("Error fetching error stats:", error);

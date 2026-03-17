@@ -25,7 +25,7 @@ export async function GET() {
       select: { roleId: true },
     });
 
-    const roleIds = reviewerRoles.map((r) => r.roleId);
+    const roleIds = reviewerRoles.map((r: { roleId: string }) => r.roleId);
 
     // Find all active users with those roles
     const reviewers = await prisma.user.findMany({

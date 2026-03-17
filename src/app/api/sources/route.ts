@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
 
     // Verify user has access to selected entities
     const userEntityIds = getUserEntities(session);
-    const invalidEntityIds = validatedData.entityIds.filter((id) => !userEntityIds.includes(id));
+    const invalidEntityIds = validatedData.entityIds.filter((id: string) => !userEntityIds.includes(id));
     if (invalidEntityIds.length > 0) {
       return NextResponse.json({ error: "Access denied to selected entities" }, { status: 403 });
     }

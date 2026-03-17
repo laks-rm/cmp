@@ -40,7 +40,6 @@ export async function GET(req: NextRequest) {
     const [files] = await bucket.getFiles({
       prefix: "daily/",
       maxResults: 1,
-      orderBy: "timeCreated desc",
     });
 
     if (!files || files.length === 0) {
@@ -75,7 +74,7 @@ export async function GET(req: NextRequest) {
     }
     
     // Format backup size
-    const backupSizeBytes = parseInt(metadata.size || "0");
+    const backupSizeBytes = parseInt(String(metadata.size || "0"));
     const backupSize = formatBytes(backupSizeBytes);
     
     // Check if backup size is suspiciously small (< 1MB)

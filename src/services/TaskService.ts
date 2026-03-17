@@ -16,7 +16,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { Prisma, Task, TaskStatus } from "@prisma/client";
+import { Prisma, Task, TaskStatus, Frequency } from "@prisma/client";
 import { logAuditEvent } from "@/lib/audit";
 import {
   TaskWithRelations,
@@ -34,7 +34,7 @@ export type TaskQueryParams = {
   teamId?: string;
   status?: TaskStatus;
   riskRating?: "HIGH" | "MEDIUM" | "LOW";
-  frequency?: string;
+  frequency?: Frequency;
   quarter?: string;
   sourceId?: string;
   picId?: string;
@@ -50,7 +50,7 @@ export type TaskCreateInput = {
   description?: string;
   expectedOutcome?: string;
   riskRating: "HIGH" | "MEDIUM" | "LOW";
-  frequency: string;
+  frequency: Frequency;
   quarter?: string;
   dueDate?: Date;
   startDate?: Date;
@@ -160,12 +160,29 @@ export class TaskService {
     // Create task
     const task = await prisma.task.create({
       data: {
-        ...data,
+        name: data.name,
+        description: data.description,
+        expectedOutcome: data.expectedOutcome,
+        riskRating: data.riskRating,
+        frequency: data.frequency,
+        quarter: data.quarter,
+        sourceId: data.sourceId,
+        sourceItemId: data.sourceItemId,
+        entityId: data.entityId,
+        assigneeId: data.assigneeId,
+        responsibleTeamId: data.responsibleTeamId,
+        picId: data.picId,
+        reviewerId: data.reviewerId,
+        clickupUrl: data.clickupUrl,
+        gdriveUrl: data.gdriveUrl,
         status,
         dueDate: data.dueDate,
         startDate: data.startDate,
         testingPeriodStart: data.testingPeriodStart,
         testingPeriodEnd: data.testingPeriodEnd,
+        evidenceRequired: data.evidenceRequired,
+        narrativeRequired: data.narrativeRequired,
+        reviewRequired: data.reviewRequired,
       },
       include: this.getDefaultIncludes(),
     });
@@ -524,10 +541,15 @@ export class TaskService {
     }
 
     if (params.overdue) {
-      where.AND?.push({
-        dueDate: { lt: new Date() },
-        status: { notIn: ["COMPLETED", "NOT_APPLICABLE"] },
-      });
+      if (!where.AND) {
+        where.AND = [];
+      }
+      if (Array.isArray(where.AND)) {
+        where.AND.push({
+          dueDate: { lt: new Date() },
+          status: { notIn: ["COMPLETED", "NOT_APPLICABLE"] },
+        });
+      }
     }
 
     return where;

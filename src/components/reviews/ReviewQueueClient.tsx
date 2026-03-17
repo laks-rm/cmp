@@ -21,6 +21,7 @@ type Task = {
   };
   entity: {
     code: string;
+    name: string;
   };
   assignee: {
     id: string;
@@ -28,7 +29,7 @@ type Task = {
     initials: string;
     avatarColor: string | null;
   } | null;
-  _count: {
+  _count?: {
     evidence: number;
   };
 };
@@ -185,7 +186,9 @@ export function ReviewQueueClient() {
                               {task.name}
                             </p>
                             <div className="mt-1 flex items-center gap-2">
-                              <EntityBadge entityCode={task.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} />
+                              <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                                {task.entity.name}
+                              </span>
                               <StatusPill status={task.status as "TO_DO" | "IN_PROGRESS" | "PENDING_REVIEW" | "COMPLETED" | "DEFERRED" | "NOT_APPLICABLE"} />
                             </div>
                           </div>
@@ -233,7 +236,7 @@ export function ReviewQueueClient() {
                         <div className="flex items-center gap-1.5">
                           <Paperclip size={14} style={{ color: "var(--text-muted)" }} />
                           <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                            {task._count.evidence}
+                            {task._count?.evidence ?? 0}
                           </span>
                         </div>
                       </td>

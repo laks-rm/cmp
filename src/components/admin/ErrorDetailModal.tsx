@@ -62,7 +62,7 @@ export function ErrorDetailModal({ isOpen, error, onClose, onUpdate }: ErrorDeta
       setResolutionNotes("");
       onUpdate();
       onClose();
-    } catch {
+    } catch (error: unknown) {
       toast.error("Failed to update error status");
     } finally {
       setResolving(false);
@@ -102,8 +102,8 @@ export function ErrorDetailModal({ isOpen, error, onClose, onUpdate }: ErrorDeta
             onClick={onClose}
             className="rounded-lg p-2 transition-colors"
             style={{ color: "var(--text-muted)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+            onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
+            onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget.style.backgroundColor = "transparent")}
           >
             <X size={20} />
           </button>
@@ -254,7 +254,7 @@ export function ErrorDetailModal({ isOpen, error, onClose, onUpdate }: ErrorDeta
               </label>
               <textarea
                 value={resolutionNotes}
-                onChange={(e) => setResolutionNotes(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setResolutionNotes(e.target.value)}
                 placeholder="Add notes about how this error was resolved..."
                 className="w-full rounded-lg border p-3 text-sm transition-colors"
                 style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
@@ -270,8 +270,8 @@ export function ErrorDetailModal({ isOpen, error, onClose, onUpdate }: ErrorDeta
             onClick={onClose}
             className="rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
             style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "white")}
+            onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
+            onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget.style.backgroundColor = "white")}
           >
             Close
           </button>
@@ -280,8 +280,8 @@ export function ErrorDetailModal({ isOpen, error, onClose, onUpdate }: ErrorDeta
             disabled={resolving}
             className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
             style={{ backgroundColor: error.resolved ? "var(--amber)" : "var(--green)" }}
-            onMouseEnter={(e) => !resolving && (e.currentTarget.style.opacity = "0.9")}
-            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+            onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => !resolving && (e.currentTarget.style.opacity = "0.9")}
+            onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => (e.currentTarget.style.opacity = "1")}
           >
             <Check size={16} />
             {error.resolved ? "Mark as Unresolved" : "Mark as Resolved"}

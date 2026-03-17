@@ -27,6 +27,7 @@ export async function GET() {
         name: true,
         shortName: true,
         jurisdiction: true,
+        regulator: true,
       },
       orderBy: { code: "asc" },
     });

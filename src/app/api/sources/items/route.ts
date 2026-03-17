@@ -29,8 +29,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Source not found" }, { status: 404 });
     }
 
-    const sourceEntityIds = source.entities.map((e) => e.entityId);
-    const hasAccess = sourceEntityIds.some((id) => session.user.entityIds.includes(id));
+    const sourceEntityIds = source.entities.map((e: { entityId: string }) => e.entityId);
+    const hasAccess = sourceEntityIds.some((id: string) => session.user.entityIds.includes(id));
     if (!hasAccess) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }

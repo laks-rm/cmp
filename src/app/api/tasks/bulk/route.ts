@@ -7,6 +7,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { bulkTaskSchema } from "@/lib/validations/tasks";
 import { checkIdempotency, storeIdempotency } from "@/lib/idempotency";
 import { acquireConcurrentSlot, createConcurrentLimitResponse } from "@/lib/concurrentLimit";
+import { Prisma } from "@prisma/client";
 
 export async function POST(req: NextRequest) {
   let releaseSlot: (() => void) | undefined;
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Some tasks not found or access denied" }, { status: 403 });
     }
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const auditLogs: Array<{
         action: string;
         module: string;
@@ -191,14 +192,22 @@ export async function POST(req: NextRequest) {
 
       if (auditLogs.length > 0) {
         await tx.auditLog.createMany({
-          data: auditLogs.map(log => ({
+          data: auditLogs.map((log: {
+            action: string;
+            module: string;
+            userId: string;
+            entityId: string;
+            targetType: string;
+            targetId: string;
+            details: Record<string, unknown>;
+          }) => ({
             action: log.action,
             module: log.module,
             userId: log.userId,
             entityId: log.entityId,
             targetType: log.targetType,
             targetId: log.targetId,
-            details: log.details,
+            details: log.details as Prisma.InputJsonValue,
             createdAt: new Date(),
           })),
         });

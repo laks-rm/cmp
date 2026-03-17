@@ -69,15 +69,15 @@ export async function logAuditEvent(params: AuditEventParams): Promise<void> {
     }
 
     // If oldValues and newValues are provided, compute changes
-    let enhancedDetails = params.details || {};
+    let enhancedDetails: Prisma.InputJsonValue = params.details || {};
     if (params.oldValues && params.newValues) {
       const changes = captureChanges(params.oldValues, params.newValues);
       enhancedDetails = {
-        ...enhancedDetails,
+        ...(typeof enhancedDetails === 'object' && enhancedDetails !== null ? enhancedDetails : {}),
         changes: changes.filter((c) => c.changed),
         oldValues: params.oldValues,
         newValues: params.newValues,
-      };
+      } as Prisma.InputJsonValue;
     }
 
     await prisma.auditLog.create({
@@ -131,7 +131,7 @@ export function captureChanges(
     // Add other fields that shouldn't trigger change tracking
   ];
 
-  for (const field of allKeys) {
+  for (const field of Array.from(allKeys)) {
     // Skip if field is in exclude list
     if (excludeFields.includes(field)) {
       continue;

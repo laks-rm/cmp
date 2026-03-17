@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     const result = await taskService.queryTasks(params, {
       userId: session.user.userId,
       entityIds: session.user.entityIds,
-      permissions: session.user.permissions,
+      permissions: [], // Add permissions if needed
     });
 
     // 5. Return response
@@ -103,11 +103,20 @@ export async function POST(req: NextRequest) {
     const validatedData = createTaskSchema.parse(body);
 
     // 5. Call service (business logic)
-    const task = await taskService.createTask(validatedData, {
-      userId: session.user.userId,
-      entityIds: session.user.entityIds,
-      permissions: session.user.permissions,
-    });
+    const task = await taskService.createTask(
+      {
+        ...validatedData,
+        dueDate: validatedData.dueDate ? new Date(validatedData.dueDate) : undefined,
+        startDate: validatedData.startDate ? new Date(validatedData.startDate) : undefined,
+        testingPeriodStart: validatedData.testingPeriodStart ? new Date(validatedData.testingPeriodStart) : undefined,
+        testingPeriodEnd: validatedData.testingPeriodEnd ? new Date(validatedData.testingPeriodEnd) : undefined,
+      },
+      {
+        userId: session.user.userId,
+        entityIds: session.user.entityIds,
+        permissions: [], // Add permissions if needed
+      }
+    );
 
     // 6. Return response
     return NextResponse.json(task, { status: 201 });

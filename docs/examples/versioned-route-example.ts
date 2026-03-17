@@ -14,6 +14,7 @@ import { withVersioning } from "@/lib/apiVersioningMiddleware";
 import { isFeatureAvailable, transformResponseForVersion } from "@/lib/apiVersioning";
 import { apiSuccess, parseQueryParams } from "@/lib/apiResponse";
 import { withSoftDelete } from "@/lib/softDelete";
+import { Prisma } from "@prisma/client";
 
 /**
  * Example 1: Basic Versioned Route
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
     );
 
     // Build query
-    const where: any = withSoftDelete({
+    const where: Prisma.TaskWhereInput = withSoftDelete({
       ...(status && { status }),
       entityId: { in: session.user.entityIds },
     });
@@ -143,7 +144,7 @@ export async function POST_V2_ONLY(req: NextRequest) {
     const body = await req.json();
 
     // Enhanced bulk operations (v2 only)
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Complex v2 logic...
       return { success: true, processed: 10 };
     });
@@ -194,17 +195,26 @@ export async function GET_WITH_FEATURE_FLAGS(req: NextRequest) {
     const tasks = await prisma.task.findMany();
 
     // V1: Basic response
-    let response: any = { tasks };
+    interface TaskResponse {
+      tasks: typeof tasks;
+      analytics?: {
+        totalTasks: number;
+        byStatus: Record<string, number>;
+        byRisk: Record<string, number>;
+      };
+    }
+    
+    const response: TaskResponse = { tasks };
 
     // V2: Include analytics if feature is available
     if (isFeatureAvailable("enhancedAnalytics", version)) {
       const analytics = {
         totalTasks: tasks.length,
-        byStatus: tasks.reduce((acc, task) => {
+        byStatus: tasks.reduce((acc: Record<string, number>, task: { status: string }) => {
           acc[task.status] = (acc[task.status] || 0) + 1;
           return acc;
         }, {} as Record<string, number>),
-        byRisk: tasks.reduce((acc, task) => {
+        byRisk: tasks.reduce((acc: Record<string, number>, task: { riskRating: string }) => {
           acc[task.riskRating] = (acc[task.riskRating] || 0) + 1;
           return acc;
         }, {} as Record<string, number>),

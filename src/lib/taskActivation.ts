@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { Prisma } from "@prisma/client";
 import { addDays } from "date-fns";
 
 let lastActivationCheck: Date | null = null;
@@ -44,7 +45,7 @@ export async function activatePlannedTasks(userId?: string): Promise<number> {
     await prisma.task.updateMany({
       where: {
         id: {
-          in: tasksToActivate.map((t) => t.id),
+          in: tasksToActivate.map((t: { id: string }) => t.id),
         },
       },
       data: {
@@ -55,7 +56,7 @@ export async function activatePlannedTasks(userId?: string): Promise<number> {
     // Log audit entries for all activations in a single batch
     const auditUserId = userId || "system";
     await prisma.auditLog.createMany({
-      data: tasksToActivate.map((task) => ({
+      data: tasksToActivate.map((task: { id: string; name: string; entityId: string; plannedDate: Date | null }) => ({
         action: "TASK_AUTO_ACTIVATED",
         module: "TASKS",
         userId: auditUserId,
@@ -205,7 +206,7 @@ export async function generateRollingTasks(): Promise<number> {
 
       if (tasksToCreate.length > 0) {
         await prisma.task.createMany({
-          data: tasksToCreate,
+          data: tasksToCreate as Prisma.TaskCreateManyInput[],
         });
         tasksCreated += tasksToCreate.length;
       }

@@ -37,7 +37,7 @@ export function getApiVersion(req: NextRequest): ApiVersion {
   // Check URL path first
   const urlVersion = extractVersionFromUrl(req.nextUrl.pathname);
   if (urlVersion && isValidVersion(urlVersion)) {
-    return urlVersion;
+    return urlVersion as ApiVersion;
   }
 
   // Check header

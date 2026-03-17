@@ -7,6 +7,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { ApiError } from "@/lib/errors";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 
 const updateUserSchema = z.object({
   name: z.string().min(1).max(255).trim().optional(),
@@ -63,7 +64,7 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
     if (validatedData.isActive !== undefined) updateData.isActive = validatedData.isActive;
 
     // Update user in a transaction with team memberships and entity access
-    const updatedUser = await prisma.$transaction(async (tx) => {
+    const updatedUser = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Update team memberships if provided
       if (validatedData.teamIds) {
         await tx.teamMembership.deleteMany({
