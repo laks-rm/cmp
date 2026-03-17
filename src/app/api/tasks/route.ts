@@ -6,8 +6,10 @@ import { requirePermission, getEntityFilter } from "@/lib/permissions";
 import { logAuditEvent } from "@/lib/audit";
 import { taskQuerySchema, createTaskSchema } from "@/lib/validations/tasks";
 import { Prisma } from "@prisma/client";
-import { activatePlannedTasks } from "@/lib/taskActivation";
+// Import removed: activatePlannedTasks - activation should only happen via scheduled cron jobs
 import { toZonedTime } from "date-fns-tz";
+import { startOfWeek, endOfWeek } from "date-fns";
+import { taskService } from "@/services/TaskService";
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,8 +20,9 @@ export async function GET(req: NextRequest) {
 
     await requirePermission(session, "TASKS", "VIEW");
 
-    // Auto-activate planned tasks (runs max once per hour)
-    await activatePlannedTasks(session.user.userId);
+    // NOTE: Auto-activation removed - tasks are activated only by scheduled cron job
+    // Previously: await activatePlannedTasks(session.user.userId);
+    // This prevents unexpected task state changes during normal read operations
 
     const searchParams = Object.fromEntries(req.nextUrl.searchParams.entries());
     const params = taskQuerySchema.parse(searchParams);
@@ -87,6 +90,31 @@ export async function GET(req: NextRequest) {
       const startOfTodayUTC = new Date(nowInUserTz.toISOString());
       where.dueDate = { lt: startOfTodayUTC };
       where.status = { notIn: ["COMPLETED", "PLANNED"] };
+    }
+
+    // Due this week filter - CAREFUL with timezone conversion
+    if (params.preset === "due-week") {
+      const userTimezone = session.user.timezone || "UTC";
+      const nowInUserTz = toZonedTime(new Date(), userTimezone);
+      
+      // Get start of week (Monday) in user timezone
+      const startOfWeekUserTz = startOfWeek(nowInUserTz, { weekStartsOn: 1 });
+      startOfWeekUserTz.setHours(0, 0, 0, 0);
+      
+      // Get end of week (Sunday) in user timezone
+      const endOfWeekUserTz = endOfWeek(startOfWeekUserTz, { weekStartsOn: 1 });
+      endOfWeekUserTz.setHours(23, 59, 59, 999);
+      
+      // Convert back to UTC for database query (dueDate is stored as UTC)
+      where.dueDate = {
+        gte: new Date(startOfWeekUserTz.toISOString()),
+        lte: new Date(endOfWeekUserTz.toISOString())
+      };
+      where.status = { notIn: ["COMPLETED", "PLANNED"] };
+    }
+
+    if (params.noPIC === "true") {
+      where.picId = null;
     }
 
     if (params.search) {
@@ -238,6 +266,17 @@ export async function POST(req: NextRequest) {
 
     if (!session.user.entityIds.includes(data.entityId)) {
       return NextResponse.json({ error: "Access denied to this entity" }, { status: 403 });
+    }
+
+    // Validate PIC is in responsible team if provided
+    if (data.picId && data.responsibleTeamId) {
+      const picInTeam = await taskService.validatePICInTeam(data.picId, data.responsibleTeamId);
+      if (!picInTeam) {
+        return NextResponse.json(
+          { error: "PIC must be a member of the responsible team" },
+          { status: 400 }
+        );
+      }
     }
 
     const task = await prisma.task.create({

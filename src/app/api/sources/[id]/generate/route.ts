@@ -9,8 +9,9 @@ import { logAuditEvent } from "@/lib/audit";
 import { ApiError } from "@/lib/errors";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
-import { addDays, endOfMonth, endOfYear, startOfYear, differenceInDays } from "date-fns";
+import { addDays } from "date-fns";
 import { acquireConcurrentSlot, createConcurrentLimitResponse } from "@/lib/concurrentLimit";
+import { shouldActivateTask } from "@/lib/taskActivation";
 
 type RecurrenceInstance = {
   index: number;
@@ -19,89 +20,192 @@ type RecurrenceInstance = {
   quarter: string | null;
 };
 
-function calculateRecurrenceInstances(frequency: string, baseDueDate: Date | null): RecurrenceInstance[] {
+/**
+ * Calculate recurrence instances starting from the user-entered due date.
+ * The baseDueDate is treated as the FIRST instance and recurrence anchor.
+ * No backdated instances are generated.
+ * 
+ * @param frequency - Task frequency (MONTHLY, QUARTERLY, etc.)
+ * @param baseDueDate - User-entered due date (becomes first instance)
+ * @param sourceEffectiveDate - Source effective date (lower bound)
+ * @returns Array of recurrence instances
+ */
+function calculateRecurrenceInstances(
+  frequency: string,
+  baseDueDate: Date | null,
+  sourceEffectiveDate: Date | null = null
+): RecurrenceInstance[] {
   const now = new Date();
-  const currentYear = now.getFullYear();
   const instances: RecurrenceInstance[] = [];
+
+  // Determine the anchor date (first instance)
+  // Must be on or after source effective date
+  let anchorDate: Date;
+  if (baseDueDate) {
+    anchorDate = new Date(baseDueDate);
+  } else {
+    // No due date provided - use source effective date or current date
+    anchorDate = sourceEffectiveDate ? new Date(sourceEffectiveDate) : now;
+  }
+
+  // Enforce source effective date as lower bound
+  if (sourceEffectiveDate) {
+    const effectiveDate = new Date(sourceEffectiveDate);
+    if (anchorDate < effectiveDate) {
+      anchorDate = effectiveDate;
+    }
+  }
 
   switch (frequency) {
     case "ADHOC": {
       // Ad-hoc tasks are created as needed, no automatic recurrence
-      // Create a single instance with no due date (or base due date if provided)
-      const dueDate = baseDueDate || null;
-      instances.push({ 
-        index: 1, 
-        totalCount: 1, 
-        plannedDate: dueDate || now, // Use current date as placeholder if no due date
-        quarter: null 
+      instances.push({
+        index: 1,
+        totalCount: 1,
+        plannedDate: anchorDate,
+        quarter: null,
+      });
+      break;
+    }
+
+    case "ONE_TIME": {
+      instances.push({
+        index: 1,
+        totalCount: 1,
+        plannedDate: anchorDate,
+        quarter: null,
       });
       break;
     }
 
     case "ANNUAL": {
-      const dueDate = baseDueDate || endOfYear(new Date(currentYear, 11, 31));
-      instances.push({ index: 1, totalCount: 1, plannedDate: dueDate, quarter: null });
+      // Generate 3 years of annual tasks
+      for (let year = 0; year < 3; year++) {
+        const instanceDate = addYears(anchorDate, year);
+        instances.push({
+          index: year + 1,
+          totalCount: 3,
+          plannedDate: instanceDate,
+          quarter: null,
+        });
+      }
       break;
     }
 
     case "BIENNIAL": {
-      // BIENNIAL tasks occur every 2 years
-      // Schedule for the next even year (or current year if already even)
-      const isEvenYear = currentYear % 2 === 0;
-      const biennialYear = isEvenYear ? currentYear : currentYear + 1;
-      const dueDate = baseDueDate || endOfYear(new Date(biennialYear, 11, 31));
-      instances.push({ index: 1, totalCount: 1, plannedDate: dueDate, quarter: null });
+      // Generate 3 biennial tasks (6 years total)
+      for (let i = 0; i < 3; i++) {
+        const instanceDate = addYears(anchorDate, i * 2);
+        instances.push({
+          index: i + 1,
+          totalCount: 3,
+          plannedDate: instanceDate,
+          quarter: null,
+        });
+      }
       break;
     }
 
     case "SEMI_ANNUAL": {
-      const h1Due = new Date(currentYear, 5, 30); // June 30
-      const h2Due = new Date(currentYear, 11, 31); // Dec 31
-      instances.push(
-        { index: 1, totalCount: 2, plannedDate: h1Due, quarter: "H1" },
-        { index: 2, totalCount: 2, plannedDate: h2Due, quarter: "H2" }
-      );
+      // Generate 2 years of semi-annual tasks (4 instances)
+      for (let i = 0; i < 4; i++) {
+        const instanceDate = addMonths(anchorDate, i * 6);
+        const month = instanceDate.getMonth();
+        const halfYear = month < 6 ? "H1" : "H2";
+        instances.push({
+          index: i + 1,
+          totalCount: 4,
+          plannedDate: instanceDate,
+          quarter: halfYear,
+        });
+      }
       break;
     }
 
     case "QUARTERLY": {
-      const q1Due = new Date(currentYear, 2, 31); // Mar 31
-      const q2Due = new Date(currentYear, 5, 30); // Jun 30
-      const q3Due = new Date(currentYear, 8, 30); // Sep 30
-      const q4Due = new Date(currentYear, 11, 31); // Dec 31
-      instances.push(
-        { index: 1, totalCount: 4, plannedDate: q1Due, quarter: "Q1" },
-        { index: 2, totalCount: 4, plannedDate: q2Due, quarter: "Q2" },
-        { index: 3, totalCount: 4, plannedDate: q3Due, quarter: "Q3" },
-        { index: 4, totalCount: 4, plannedDate: q4Due, quarter: "Q4" }
-      );
+      // Generate 2 years of quarterly tasks (8 instances)
+      const anchorDay = anchorDate.getDate();
+      
+      for (let i = 0; i < 8; i++) {
+        // Add 3 months per instance
+        let instanceDate = addMonths(anchorDate, i * 3);
+        
+        // Preserve day-of-month where possible
+        // If target month doesn't have anchor day, use last day of month
+        const targetMonth = instanceDate.getMonth();
+        const targetYear = instanceDate.getFullYear();
+        const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+        
+        if (anchorDay > lastDayOfTargetMonth) {
+          // Anchor day doesn't exist in target month (e.g., 31 in Feb)
+          instanceDate = new Date(targetYear, targetMonth, lastDayOfTargetMonth);
+        } else {
+          // Use anchor day
+          instanceDate = new Date(targetYear, targetMonth, anchorDay);
+        }
+        
+        const month = instanceDate.getMonth();
+        const quarter = `Q${Math.floor(month / 3) + 1}`;
+        
+        instances.push({
+          index: i + 1,
+          totalCount: 8,
+          plannedDate: instanceDate,
+          quarter,
+        });
+      }
       break;
     }
 
     case "MONTHLY": {
-      for (let month = 0; month < 12; month++) {
-        const dueDate = endOfMonth(new Date(currentYear, month, 1));
+      // Generate 18 months of tasks
+      const anchorDay = anchorDate.getDate();
+      
+      for (let i = 0; i < 18; i++) {
+        // Add i months to anchor
+        let instanceDate = addMonths(anchorDate, i);
+        
+        // Preserve day-of-month where possible
+        // If target month doesn't have anchor day, use last day of month
+        const targetMonth = instanceDate.getMonth();
+        const targetYear = instanceDate.getFullYear();
+        const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+        
+        if (anchorDay > lastDayOfTargetMonth) {
+          // Anchor day doesn't exist in target month (e.g., 31 in Feb)
+          instanceDate = new Date(targetYear, targetMonth, lastDayOfTargetMonth);
+        } else {
+          // Use anchor day
+          instanceDate = new Date(targetYear, targetMonth, anchorDay);
+        }
+        
+        const month = instanceDate.getMonth();
         const quarter = `Q${Math.floor(month / 3) + 1}`;
-        instances.push({ index: month + 1, totalCount: 12, plannedDate: dueDate, quarter });
+        
+        instances.push({
+          index: i + 1,
+          totalCount: 18,
+          plannedDate: instanceDate,
+          quarter,
+        });
       }
       break;
     }
 
     case "WEEKLY": {
-      const now = new Date();
-      const thirtyDaysOut = addDays(now, 30);
-      let currentDate = now;
+      // Generate 30 days worth of weekly tasks (4-5 instances)
+      const thirtyDaysOut = addDays(anchorDate, 30);
+      let currentDate = new Date(anchorDate);
       let weekIndex = 1;
-      
-      // Only generate next 30 days of weekly tasks
+
       while (currentDate <= thirtyDaysOut) {
         const month = currentDate.getMonth();
         const quarter = `Q${Math.floor(month / 3) + 1}`;
-        instances.push({ 
-          index: weekIndex, 
-          totalCount: null,
-          plannedDate: currentDate, 
-          quarter 
+        instances.push({
+          index: weekIndex,
+          totalCount: null, // Rolling generation
+          plannedDate: new Date(currentDate),
+          quarter,
         });
         currentDate = addDays(currentDate, 7);
         weekIndex++;
@@ -110,30 +214,29 @@ function calculateRecurrenceInstances(frequency: string, baseDueDate: Date | nul
     }
 
     case "DAILY": {
-      const now = new Date();
-      const thirtyDaysOut = addDays(now, 30);
-      let day = 0;
-      
-      // Only generate next 30 days of daily tasks
-      while (addDays(now, day) <= thirtyDaysOut) {
-        const dueDate = addDays(now, day);
+      // Generate 30 days of daily tasks
+      for (let day = 0; day < 30; day++) {
+        const dueDate = addDays(anchorDate, day);
         const month = dueDate.getMonth();
         const quarter = `Q${Math.floor(month / 3) + 1}`;
-        instances.push({ 
-          index: day + 1, 
-          totalCount: null,
-          plannedDate: dueDate, 
-          quarter 
+        instances.push({
+          index: day + 1,
+          totalCount: null, // Rolling generation
+          plannedDate: dueDate,
+          quarter,
         });
-        day++;
       }
       break;
     }
 
-    case "ONE_TIME":
     default: {
-      const dueDate = baseDueDate || new Date(currentYear, 11, 31);
-      instances.push({ index: 1, totalCount: 1, plannedDate: dueDate, quarter: null });
+      // Unknown frequency - treat as ONE_TIME
+      instances.push({
+        index: 1,
+        totalCount: 1,
+        plannedDate: anchorDate,
+        quarter: null,
+      });
       break;
     }
   }
@@ -141,10 +244,21 @@ function calculateRecurrenceInstances(frequency: string, baseDueDate: Date | nul
   return instances;
 }
 
-function shouldStartAsActive(plannedDate: Date): boolean {
-  const now = new Date();
-  const daysUntilPlanned = differenceInDays(plannedDate, now);
-  return daysUntilPlanned <= 30;
+// Helper functions for date arithmetic
+function addYears(date: Date, years: number): Date {
+  const result = new Date(date);
+  result.setFullYear(result.getFullYear() + years);
+  return result;
+}
+
+function addMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  const targetMonth = result.getMonth() + months;
+  result.setMonth(targetMonth);
+  
+  // Handle day overflow (e.g., Jan 31 + 1 month = Mar 3)
+  // This will be fixed by the calling code that preserves anchor day
+  return result;
 }
 
 export async function POST(req: NextRequest, context: { params: { id: string } }) {
@@ -193,6 +307,9 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
     // Validation: check for blocking issues
     const errors: string[] = [];
     const warnings: string[] = [];
+    
+    // Build set of valid entity IDs for this source
+    const sourceEntityIdSet = new Set(source.entities.map((e: { entityId: string }) => e.entityId));
 
     if (validatedData.items.length === 0) {
       errors.push("No items provided");
@@ -228,6 +345,7 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
     const result = await prisma.$transaction(async (tx) => {
       const createdItems = [];
       const tasksToCreate = [];
+      const tasksWithoutTeamWarnings = new Set<string>();
 
       for (const itemData of validatedData.items) {
         // Create source item
@@ -246,17 +364,30 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
 
         // Prepare tasks for batch creation
         for (const taskData of itemData.tasks) {
+          // Validate entityId belongs to source entities
+          if (!sourceEntityIdSet.has(taskData.entityId)) {
+            throw new Error(`Task "${taskData.name}" has entityId ${taskData.entityId} which is not linked to this source`);
+          }
+          
           const recurrenceGroupId = uuidv4();
           const instances = calculateRecurrenceInstances(
             taskData.frequency,
-            taskData.dueDate ? new Date(taskData.dueDate) : null
+            taskData.dueDate ? new Date(taskData.dueDate) : null,
+            source.effectiveDate // Pass source effective date as lower bound
           );
           
           // For each recurrence instance, prepare task data
           for (let i = 0; i < instances.length; i++) {
             const instance = instances[i];
-            const isFirstInstance = i === 0;
-            const shouldActivate = isFirstInstance || shouldStartAsActive(instance.plannedDate);
+            
+            // Determine initial status using shared helper
+            let shouldActivate = shouldActivateTask(instance.plannedDate);
+            
+            // SAFETY: Tasks without responsible team MUST NOT become active actionable work
+            if (!taskData.responsibleTeamId && shouldActivate) {
+              shouldActivate = false; // Force to PLANNED
+              tasksWithoutTeamWarnings.add(taskData.name);
+            }
 
             tasksToCreate.push({
               sourceId,
@@ -304,7 +435,8 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
 
       return { 
         createdItems, 
-        createdTasksCount: createdTasksResult.count 
+        createdTasksCount: createdTasksResult.count,
+        tasksWithoutTeamWarnings
       };
     }, {
       timeout: 120000, // 2 minute timeout for large sources
@@ -323,11 +455,19 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
       },
     });
 
+    // Add warning for tasks without responsible team that were forced to PLANNED
+    if (result.tasksWithoutTeamWarnings.size > 0) {
+      const taskNames = Array.from(result.tasksWithoutTeamWarnings).slice(0, 3);
+      warnings.push(
+        `${result.tasksWithoutTeamWarnings.size} task(s) kept as PLANNED due to missing responsible team: ${taskNames.join(", ")}${result.tasksWithoutTeamWarnings.size > 3 ? "..." : ""}`
+      );
+    }
+
     return NextResponse.json({
       success: true,
       itemsCreated: result.createdItems.length,
       tasksCreated: result.createdTasksCount,
-      warnings,
+      warnings: warnings.length > 0 ? warnings : undefined,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

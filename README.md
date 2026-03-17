@@ -131,6 +131,8 @@ prisma/
 
 ## 📊 Database Models
 
+### Current Models (Version 1.0)
+
 - **Entity** — Legal entities (DIEL, DGL, DBVI, FINSERV)
 - **Team** — Organizational teams (Compliance, CompOps, Internal Audit)
 - **Role** — System roles with permissions (Super Admin, Manager, Analyst, Executor, Viewer)
@@ -142,10 +144,12 @@ prisma/
   - Allows teams to use the same code independently (e.g., "GDPR", "MiFID II")
   - Enforced via composite unique constraint: `[code, teamId]`
   - **Soft delete enabled** (deletedAt, deletedBy, deletedReason)
+  - **⚠️ NOTE**: This model will be replaced by version-aware architecture (see FIX 40)
 - **SourceItem** — Hierarchical source requirements
 - **Task** — Compliance tasks with evidence + workflow
   - **Frequencies:** ADHOC, DAILY, WEEKLY, MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL, BIENNIAL, ONE_TIME
   - **Soft delete enabled** (deletedAt, deletedBy, deletedReason)
+  - **⚠️ NOTE**: Will be enhanced with template and version references (see FIX 40)
 - **Finding** — Issues and action items
   - **Soft delete enabled** (deletedAt, deletedBy, deletedReason)
 - **Evidence** — File attachments
@@ -158,6 +162,25 @@ prisma/
   - See `docs/FIX_36_COMMENTS_API_ISSUES.md` for security details
 - **AuditLog** — Tamper-proof event trail (INSERT-only)
 - **Notification** — In-app notifications
+
+### Future Models (Version 2.0 - FIX 40)
+
+The database will evolve to support version-aware source management:
+
+- **SourceMaster** — Long-lived regulation/policy family (replaces Source)
+- **SourceVersion** — Time-specific regulation snapshot with effectiveDate
+- **SourceItemVersion** — Versioned clauses with change tracking
+- **TaskTemplate** — Operational task definition (frequency lives here!)
+- **Task** — Enhanced with template and version references
+
+**Key Changes:**
+- ✅ Frequency moves from Source to TaskTemplate (correct domain)
+- ✅ Sources become versioned with full history
+- ✅ Tasks link to specific source versions for auditability
+- ✅ Change tracking for regulatory updates
+- ✅ Impact assessment when versions change
+
+See `docs/FIX_40_SUMMARY.md` for complete architecture.
 
 ### Soft Delete Pattern
 
@@ -202,6 +225,11 @@ Critical entities (Task, Finding, Source) use soft delete instead of hard delete
 
 ## 🔄 Next Steps (Phase 3+)
 
+- [ ] **Version-Aware Source Model** (FIX 40 - High Priority)
+  - Design complete - ready for implementation
+  - Enables source versioning with full auditability
+  - Moves frequency from source to task template (correct domain)
+  - See `docs/FIX_40_SUMMARY.md` for complete design
 - [ ] Sources library (CRUD + source-item hierarchy)
 - [ ] Task tracker (planning, assignment, execution)
 - [ ] Review queue (approval workflows)

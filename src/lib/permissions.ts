@@ -67,13 +67,7 @@ export function getEntityFilter(session: Session): Record<string, unknown> {
 }
 
 export async function requirePermission(session: Session, module: string, action: string): Promise<void> {
-  // #region agent log
-  await fetch('http://127.0.0.1:7712/ingest/07d2e8ff-a49f-4678-98e7-a4ff4c518e7d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'782931'},body:JSON.stringify({sessionId:'782931',location:'permissions.ts:51',message:'requirePermission called',data:{module,action,userId:session.user.userId,userPermissions:session.user.permissions||[]},timestamp:Date.now(),hypothesisId:'B,E'})}).catch(()=>{});
-  // #endregion
   const allowed = await hasPermission(session, module, action);
-  // #region agent log
-  await fetch('http://127.0.0.1:7712/ingest/07d2e8ff-a49f-4678-98e7-a4ff4c518e7d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'782931'},body:JSON.stringify({sessionId:'782931',location:'permissions.ts:52',message:'hasPermission result',data:{allowed,module,action},timestamp:Date.now(),hypothesisId:'B,D'})}).catch(()=>{});
-  // #endregion
   if (!allowed) {
     await logAuditEvent({
       action: "PERMISSION_DENIED",

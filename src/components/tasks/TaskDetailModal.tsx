@@ -139,6 +139,9 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
   const [narrative, setNarrative] = useState("");
   const [showInfoCallout, setShowInfoCallout] = useState(true);
   const [showFindingModal, setShowFindingModal] = useState(false);
+  const [showPICModal, setShowPICModal] = useState(false);
+  const [selectedPIC, setSelectedPIC] = useState("");
+  const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Check localStorage for dismissed info callout
@@ -181,6 +184,15 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
       if (commentsRes.ok) setComments(await commentsRes.json());
       if (auditRes.ok) setAuditLog(await auditRes.json());
       if (reviewersRes.ok) setReviewers(await reviewersRes.json());
+
+      // Fetch team members if responsible team is set
+      if (taskData.responsibleTeamId) {
+        const membersRes = await fetch(`/api/teams/${taskData.responsibleTeamId}/members`);
+        if (membersRes.ok) {
+          const membersData = await membersRes.json();
+          setTeamMembers(membersData.map((m: { user: User }) => m.user));
+        }
+      }
 
       // Fetch recurrence group tasks if this task belongs to a recurrence group
       if (taskData.recurrenceGroupId) {
@@ -411,6 +423,52 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
     }
   };
 
+  const handleSelfAssign = async () => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/self-assign`, {
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        toast.error(error.error || "Failed to self-assign");
+        return;
+      }
+
+      toast.success("You are now the PIC for this task");
+      await fetchTaskData();
+      if (onTaskUpdated) onTaskUpdated();
+    } catch (error) {
+      console.error("Self-assign error:", error);
+      toast.error("Failed to self-assign");
+    }
+  };
+
+  const handleAssignPIC = async (picId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/assign-pic`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ picId }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        toast.error(error.error || "Failed to assign PIC");
+        return;
+      }
+
+      toast.success("PIC assigned successfully");
+      setShowPICModal(false);
+      setSelectedPIC("");
+      await fetchTaskData();
+      if (onTaskUpdated) onTaskUpdated();
+    } catch (error) {
+      console.error("Assign PIC error:", error);
+      toast.error("Failed to assign PIC");
+    }
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -434,6 +492,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
   const isPendingReview = task?.status === "PENDING_REVIEW";
   const isInProgress = task?.status === "IN_PROGRESS";
   const isToDo = task?.status === "TO_DO";
+  const isCurrentPIC = task?.picId === session?.user.userId;
   const isCompleted = task?.status === "COMPLETED";
   const isDeferred = task?.status === "DEFERRED";
   const isNotApplicable = task?.status === "NOT_APPLICABLE";
@@ -445,7 +504,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
     : false;
 
   // Check if user is Super Admin
-  const isSuperAdmin = session?.user.roleName === "Super Admin";
+  const isSuperAdmin = session?.user.roleName === "SUPER_ADMIN";
 
   // User can act on the task if they are the PIC, a member of the responsible team, or a Super Admin
   const canActOnTask = isPIC || isTeamMember || isSuperAdmin;
@@ -597,9 +656,27 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                     </div>
 
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                        Person in Charge (PIC)
-                      </label>
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <label className="block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                          Person in Charge (PIC)
+                        </label>
+                        {!task.pic && isTeamMember && (
+                          <button
+                            onClick={handleSelfAssign}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                          >
+                            Assign to Me
+                          </button>
+                        )}
+                        {(isSuperAdmin || isCurrentPIC) && (
+                          <button
+                            onClick={() => setShowPICModal(true)}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                          >
+                            {task.pic ? "Change PIC" : "Assign PIC"}
+                          </button>
+                        )}
+                      </div>
                       {task.pic ? (
                         <div className="flex items-center gap-2">
                           <div
@@ -613,7 +690,15 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                           </span>
                         </div>
                       ) : (
-                        <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not assigned</span>
+                        <div 
+                          className="flex items-center gap-2 rounded-lg border-2 border-dashed px-3 py-2"
+                          style={{ borderColor: "var(--amber)", backgroundColor: "var(--amber-light)" }}
+                        >
+                          <AlertTriangle size={18} style={{ color: "var(--amber)" }} />
+                          <span className="text-sm font-medium" style={{ color: "var(--amber)" }}>
+                            No PIC Assigned
+                          </span>
+                        </div>
                       )}
                     </div>
 
@@ -1337,6 +1422,49 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
           }}
           linkedTaskId={task.id}
         />
+      )}
+
+      {/* PIC Assignment Modal */}
+      {showPICModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md rounded-lg bg-white p-6">
+            <h3 className="mb-4 text-lg font-semibold">
+              {task?.pic ? "Change PIC" : "Assign PIC"}
+            </h3>
+            
+            <select
+              value={selectedPIC}
+              onChange={(e) => setSelectedPIC(e.target.value)}
+              className="mb-4 w-full rounded-lg border px-3 py-2"
+            >
+              <option value="">Select team member...</option>
+              {teamMembers.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </select>
+            
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowPICModal(false);
+                  setSelectedPIC("");
+                }}
+                className="rounded-lg border px-4 py-2 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleAssignPIC(selectedPIC)}
+                disabled={!selectedPIC}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+              >
+                Assign
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

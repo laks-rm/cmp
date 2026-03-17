@@ -156,10 +156,19 @@ export function UsersAccessTab() {
 
   const handleSubmit = async () => {
     try {
-      const payload = {
-        ...formData,
+      const payload: Record<string, unknown> = {
+        name: formData.name,
+        email: formData.email,
+        roleId: formData.roleId,
+        teamIds: formData.teamIds,
         entityIds: formData.grantAllEntities ? entities.map((e) => e.id) : formData.entityIds,
+        timezone: formData.timezone,
       };
+
+      // Only include password if it's been entered
+      if (formData.password && formData.password.trim().length > 0) {
+        payload.password = formData.password;
+      }
 
       const res = editingUser
         ? await fetch(`/api/admin/users/${editingUser.id}`, {

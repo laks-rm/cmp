@@ -1,6 +1,20 @@
 import { prisma } from "./prisma";
 import { Prisma } from "@prisma/client";
-import { addDays } from "date-fns";
+import { addDays, differenceInDays } from "date-fns";
+
+// Unified activation threshold - tasks within this many days become active
+export const ACTIVATION_THRESHOLD_DAYS = 30;
+
+/**
+ * Shared helper to determine if a task should be activated based on its planned date.
+ * Returns true if the task is due within ACTIVATION_THRESHOLD_DAYS.
+ */
+export function shouldActivateTask(plannedDate: Date | null): boolean {
+  if (!plannedDate) return false;
+  const now = new Date();
+  const daysUntilPlanned = differenceInDays(plannedDate, now);
+  return daysUntilPlanned <= ACTIVATION_THRESHOLD_DAYS;
+}
 
 let lastActivationCheck: Date | null = null;
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -19,14 +33,14 @@ export async function activatePlannedTasks(userId?: string): Promise<number> {
   lastActivationCheck = now;
 
   try {
-    // Find all PLANNED tasks where plannedDate is within the next 7 days
-    const sevenDaysFromNow = addDays(now, 7);
+    // Find all PLANNED tasks where plannedDate is within the activation threshold
+    const thresholdDate = addDays(now, ACTIVATION_THRESHOLD_DAYS);
 
     const tasksToActivate = await prisma.task.findMany({
       where: {
         status: "PLANNED",
         plannedDate: {
-          lte: sevenDaysFromNow,
+          lte: thresholdDate,
         },
       },
       select: {

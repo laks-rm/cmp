@@ -88,7 +88,7 @@ export function SourcesClient() {
   };
 
   const handleViewTasks = (source: Source) => {
-    router.push(`/tasks?sourceId=${source.id}`);
+    router.push(`/sources/${source.id}/tasks`);
   };
 
   const handleAddTasks = (source: Source) => {

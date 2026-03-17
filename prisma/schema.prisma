@@ -23,6 +23,32 @@ enum SourceStatus {
   ARCHIVED
 }
 
+// FIX 40: New enums for version-aware source model
+enum SourceMasterStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum SourceVersionStatus {
+  DRAFT
+  ACTIVE
+  SUPERSEDED
+  ARCHIVED
+}
+
+enum SourceItemChangeType {
+  UNCHANGED
+  MODIFIED
+  NEW
+  REMOVED
+}
+
+enum TaskTemplateStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+}
+
 enum TaskStatus {
   PLANNED
   TO_DO
@@ -77,39 +103,238 @@ model IssuingAuthority {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   sources      Source[]
+  sourceMasters SourceMaster[]
+}
+
+// ============================================================================
+// FIX 40: VERSION-AWARE SOURCE MODEL
+// ============================================================================
+
+model SourceMaster {
+  id                   String               @id @default(uuid())
+  code                 String
+  name                 String
+  sourceType           SourceType
+  issuingAuthorityId   String?
+  ownerTeamId          String
+  status               SourceMasterStatus   @default(ACTIVE)
+  metadata             Json?
+  
+  // Soft delete fields
+  deletedAt            DateTime?
+  deletedBy            String?
+  deletedReason        String?              @db.Text
+  
+  // Timestamps
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  
+  // Relationships
+  issuingAuthority     IssuingAuthority?    @relation(fields: [issuingAuthorityId], references: [id], onDelete: SetNull)
+  ownerTeam            Team                 @relation(fields: [ownerTeamId], references: [id], onDelete: Restrict)
+  deletedByUser        User?                @relation("SourceMasterDeleter", fields: [deletedBy], references: [id], onDelete: SetNull)
+  versions             SourceVersion[]
+  
+  // Constraints
+  @@unique([code, ownerTeamId])
+  @@index([ownerTeamId])
+  @@index([issuingAuthorityId])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([deletedBy])
+}
+
+model SourceVersion {
+  id                   String                  @id @default(uuid())
+  sourceMasterId       String
+  versionNumber        String
+  effectiveDate        DateTime
+  expiryDate           DateTime?
+  reviewDate           DateTime?
+  status               SourceVersionStatus     @default(DRAFT)
+  changeSummary        String?                 @db.Text
+  documentUrl          String?
+  
+  // Version chain (many-to-one: many versions can supersede one older version)
+  supersedesId         String?
+  
+  // Soft delete fields
+  deletedAt            DateTime?
+  deletedBy            String?
+  deletedReason        String?                 @db.Text
+  
+  // Timestamps
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  
+  // Relationships
+  sourceMaster         SourceMaster            @relation(fields: [sourceMasterId], references: [id], onDelete: Restrict)
+  supersedes           SourceVersion?          @relation("VersionSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy         SourceVersion[]         @relation("VersionSupersession")
+  deletedByUser        User?                   @relation("SourceVersionDeleter", fields: [deletedBy], references: [id], onDelete: SetNull)
+  
+  items                SourceItemVersion[]
+  entities             SourceVersionEntity[]
+  tasks                Task[]
+  findings             Finding[]
+  
+  // Constraints
+  @@unique([sourceMasterId, versionNumber])
+  @@unique([sourceMasterId, effectiveDate])
+  @@index([sourceMasterId])
+  @@index([sourceMasterId, status])
+  @@index([effectiveDate])
+  @@index([status])
+  @@index([supersedesId])
+  @@index([deletedAt])
+  @@index([deletedBy])
+}
+
+model SourceVersionEntity {
+  id              String          @id @default(uuid())
+  sourceVersionId String
+  entityId        String
+  
+  sourceVersion   SourceVersion   @relation(fields: [sourceVersionId], references: [id], onDelete: Cascade)
+  entity          Entity          @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  
+  @@unique([sourceVersionId, entityId])
+  @@index([sourceVersionId])
+  @@index([entityId])
+}
+
+model SourceItemVersion {
+  id                   String                  @id @default(uuid())
+  sourceVersionId      String
+  reference            String
+  title                String
+  description          String?                 @db.Text
+  parentId             String?
+  sortOrder            Int                     @default(0)
+  
+  // Change tracking
+  changeType           SourceItemChangeType    @default(NEW)
+  previousItemId       String?
+  
+  metadata             Json?
+  
+  // Timestamps
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  
+  // Relationships
+  sourceVersion        SourceVersion           @relation(fields: [sourceVersionId], references: [id], onDelete: Cascade)
+  parent               SourceItemVersion?      @relation("ItemHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children             SourceItemVersion[]     @relation("ItemHierarchy")
+  previousItem         SourceItemVersion?      @relation("ItemEvolution", fields: [previousItemId], references: [id], onDelete: SetNull)
+  nextItems            SourceItemVersion[]     @relation("ItemEvolution")
+  
+  taskTemplates        TaskTemplate[]
+  tasks                Task[]
+  
+  @@index([sourceVersionId])
+  @@index([sourceVersionId, reference])
+  @@index([parentId])
+  @@index([previousItemId])
+  @@index([changeType])
+}
+
+model TaskTemplate {
+  id                      String                @id @default(uuid())
+  sourceItemVersionId     String
+  
+  // Task definition
+  name                    String
+  description             String?               @db.Text
+  expectedOutcome         String?               @db.Text
+  
+  // Frequency lives here!
+  frequency               Frequency
+  anchorDate              DateTime
+  
+  // Risk and requirements
+  riskRating              RiskRating
+  evidenceRequired        Boolean               @default(false)
+  narrativeRequired       Boolean               @default(false)
+  reviewRequired          Boolean               @default(true)
+  
+  // Default assignments
+  defaultResponsibleTeamId String?
+  defaultPicId            String?
+  defaultReviewerId       String?
+  
+  // Applicability
+  applicableEntities      Json?
+  
+  // Template lifecycle
+  status                  TaskTemplateStatus    @default(DRAFT)
+  retiredAt               DateTime?
+  retiredReason           String?               @db.Text
+  
+  // Additional metadata
+  clickupUrlTemplate      String?
+  gdriveUrlTemplate       String?
+  metadata                Json?
+  
+  // Soft delete fields
+  deletedAt               DateTime?
+  deletedBy               String?
+  deletedReason           String?               @db.Text
+  
+  // Timestamps
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  
+  // Relationships
+  sourceItemVersion       SourceItemVersion     @relation(fields: [sourceItemVersionId], references: [id], onDelete: Restrict)
+  defaultResponsibleTeam  Team?                 @relation("TemplateDefaultTeam", fields: [defaultResponsibleTeamId], references: [id], onDelete: SetNull)
+  defaultPic              User?                 @relation("TemplateDefaultPIC", fields: [defaultPicId], references: [id], onDelete: SetNull)
+  defaultReviewer         User?                 @relation("TemplateDefaultReviewer", fields: [defaultReviewerId], references: [id], onDelete: SetNull)
+  deletedByUser           User?                 @relation("TaskTemplateDeleter", fields: [deletedBy], references: [id], onDelete: SetNull)
+  
+  generatedTasks          Task[]
+  
+  @@index([sourceItemVersionId])
+  @@index([status])
+  @@index([defaultResponsibleTeamId])
+  @@index([deletedAt])
+  @@index([deletedBy])
 }
 
 model Entity {
-  id           String             @id @default(uuid())
-  code         String             @unique
-  name         String
-  shortName    String
-  jurisdiction String
-  regulator    String
-  isActive     Boolean            @default(true)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  userAccess   UserEntityAccess[]
-  sourceLinks  SourceEntity[]
-  tasks        Task[]
-  findings     Finding[]
-  auditLogs    AuditLog[]
+  id                String                   @id @default(uuid())
+  code              String                   @unique
+  name              String
+  shortName         String
+  jurisdiction      String
+  regulator         String
+  isActive          Boolean                  @default(true)
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  userAccess        UserEntityAccess[]
+  sourceLinks       SourceEntity[]
+  sourceVersions    SourceVersionEntity[]    // FIX 40: New relationship
+  tasks             Task[]
+  findings          Finding[]
+  auditLogs         AuditLog[]
 }
 
 model Team {
-  id                String           @id @default(uuid())
-  name              String           @unique
-  description       String?
-  approvalRequired  Boolean          @default(true)
-  evidenceRequired  Boolean          @default(false)
-  narrativeRequired Boolean          @default(false)
-  statusFlow        Json
-  isActive          Boolean          @default(true)
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  memberships       TeamMembership[]
-  sources           Source[]
-  responsibleTasks  Task[]           @relation("TaskResponsibleTeam")
+  id                       String           @id @default(uuid())
+  name                     String           @unique
+  description              String?
+  approvalRequired         Boolean          @default(true)
+  evidenceRequired         Boolean          @default(false)
+  narrativeRequired        Boolean          @default(false)
+  statusFlow               Json
+  isActive                 Boolean          @default(true)
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  memberships              TeamMembership[]
+  sources                  Source[]
+  sourceMasters            SourceMaster[]          // FIX 40: New relationship
+  taskTemplates            TaskTemplate[]   @relation("TemplateDefaultTeam")  // FIX 40: New relationship
+  responsibleTasks         Task[]           @relation("TaskResponsibleTeam")
 }
 
 model Role {
@@ -149,35 +374,42 @@ model RolePermission {
 }
 
 model User {
-  id              String             @id @default(uuid())
-  email           String             @unique
-  name            String
-  initials        String
-  passwordHash    String
-  roleId          String
-  isActive        Boolean            @default(true)
-  avatarColor     String?
-  timezone        String             @default("UTC")
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  role            Role               @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  entityAccess    UserEntityAccess[]
-  teamMemberships TeamMembership[]
-  assignedTasks   Task[]             @relation("TaskAssignee")
-  picTasks        Task[]             @relation("TaskPIC")
-  reviewTasks     Task[]             @relation("TaskReviewer")
-  deletedTasks    Task[]             @relation("TaskDeleter")
-  actionFindings  Finding[]          @relation("FindingActionOwner")
-  raisedFindings  Finding[]          @relation("FindingRaisedBy")
-  deletedFindings Finding[]          @relation("FindingDeleter")
-  deletedSources  Source[]           @relation("SourceDeleter")
-  comments        Comment[]
-  uploadedFiles   Evidence[]
-  auditLogs       AuditLog[]
-  notifications   Notification[]
-  errorLogs       ErrorLog[]         @relation("ErrorLogs")
-  resolvedErrors  ErrorLog[]         @relation("ResolvedErrors")
-  idempotencyKeys IdempotencyKey[]   @relation("IdempotencyKeys")
+  id                       String             @id @default(uuid())
+  email                    String             @unique
+  name                     String
+  initials                 String
+  passwordHash             String
+  roleId                   String
+  isActive                 Boolean            @default(true)
+  avatarColor              String?
+  timezone                 String             @default("UTC")
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+  role                     Role               @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  entityAccess             UserEntityAccess[]
+  teamMemberships          TeamMembership[]
+  assignedTasks            Task[]             @relation("TaskAssignee")
+  picTasks                 Task[]             @relation("TaskPIC")
+  reviewTasks              Task[]             @relation("TaskReviewer")
+  deletedTasks             Task[]             @relation("TaskDeleter")
+  // FIX 40: New relationships
+  defaultPicTemplates      TaskTemplate[]     @relation("TemplateDefaultPIC")
+  defaultReviewerTemplates TaskTemplate[]     @relation("TemplateDefaultReviewer")
+  deletedTaskTemplates     TaskTemplate[]     @relation("TaskTemplateDeleter")
+  deletedSourceMasters     SourceMaster[]     @relation("SourceMasterDeleter")
+  deletedSourceVersions    SourceVersion[]    @relation("SourceVersionDeleter")
+  // Existing relationships
+  actionFindings           Finding[]          @relation("FindingActionOwner")
+  raisedFindings           Finding[]          @relation("FindingRaisedBy")
+  deletedFindings          Finding[]          @relation("FindingDeleter")
+  deletedSources           Source[]           @relation("SourceDeleter")
+  comments                 Comment[]
+  uploadedFiles            Evidence[]
+  auditLogs                AuditLog[]
+  notifications            Notification[]
+  errorLogs                ErrorLog[]         @relation("ErrorLogs")
+  resolvedErrors           ErrorLog[]         @relation("ResolvedErrors")
+  idempotencyKeys          IdempotencyKey[]   @relation("IdempotencyKeys")
 }
 
 model UserEntityAccess {
@@ -275,6 +507,11 @@ model SourceItem {
 
 model Task {
   id                   String      @id @default(uuid())
+  // FIX 40: New fields for version-aware model (nullable during migration)
+  taskTemplateId       String?
+  sourceVersionId      String?
+  sourceItemVersionId  String?
+  // Existing fields
   name                 String
   description          String?
   expectedOutcome      String?
@@ -296,8 +533,8 @@ model Task {
   recurrenceIndex      Int?
   recurrenceTotalCount Int?
   plannedDate          DateTime?
-  sourceId             String
-  sourceItemId         String?
+  sourceId             String      // Legacy field, kept temporarily
+  sourceItemId         String?     // Legacy field, kept temporarily
   entityId             String
   assigneeId           String?
   responsibleTeamId    String?
@@ -315,8 +552,14 @@ model Task {
   
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
+  // FIX 40: New relationships
+  taskTemplate         TaskTemplate?     @relation(fields: [taskTemplateId], references: [id], onDelete: Restrict)
+  sourceVersion        SourceVersion?    @relation(fields: [sourceVersionId], references: [id], onDelete: Restrict)
+  sourceItemVersion    SourceItemVersion? @relation(fields: [sourceItemVersionId], references: [id], onDelete: Restrict)
+  // Legacy relationships
   source               Source      @relation(fields: [sourceId], references: [id], onDelete: Restrict)
   sourceItem           SourceItem? @relation(fields: [sourceItemId], references: [id], onDelete: SetNull)
+  // Existing relationships
   entity               Entity      @relation(fields: [entityId], references: [id], onDelete: Restrict)
   assignee             User?       @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   responsibleTeam      Team?       @relation("TaskResponsibleTeam", fields: [responsibleTeamId], references: [id], onDelete: SetNull)
@@ -327,8 +570,14 @@ model Task {
   comments             Comment[]
   findings             Finding[]
 
+  // FIX 40: New indexes
+  @@index([taskTemplateId])
+  @@index([sourceVersionId])
+  @@index([sourceItemVersionId])
+  // Legacy indexes
   @@index([sourceId])
   @@index([sourceItemId])
+  // Existing indexes
   @@index([entityId])
   @@index([assigneeId])
   @@index([responsibleTeamId])
@@ -382,7 +631,8 @@ model Finding {
   closureNote        String?
   targetDate         DateTime?
   closedAt           DateTime?
-  sourceId           String
+  sourceId           String          // Legacy field, kept temporarily
+  sourceVersionId    String?         // FIX 40: New field (nullable during migration)
   taskId             String?
   entityId           String
   actionOwnerId      String
@@ -396,6 +646,7 @@ model Finding {
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
   source             Source          @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  sourceVersion      SourceVersion?  @relation(fields: [sourceVersionId], references: [id], onDelete: Restrict)  // FIX 40: New relationship
   task               Task?           @relation(fields: [taskId], references: [id], onDelete: SetNull)
   entity             Entity          @relation(fields: [entityId], references: [id], onDelete: Restrict)
   actionOwner        User            @relation("FindingActionOwner", fields: [actionOwnerId], references: [id], onDelete: Restrict)
@@ -405,6 +656,7 @@ model Finding {
   comments           Comment[]
 
   @@index([sourceId])
+  @@index([sourceVersionId])  // FIX 40: New index
   @@index([taskId])
   @@index([entityId])
   @@index([actionOwnerId])

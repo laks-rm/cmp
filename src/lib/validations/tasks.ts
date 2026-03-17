@@ -21,6 +21,7 @@ export const taskQuerySchema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
+  noPIC: z.enum(["true", "false"]).optional(),
 });
 
 export const createTaskSchema = z.object({
@@ -44,7 +45,7 @@ export const createTaskSchema = z.object({
   sourceItemId: z.string().uuid().optional().or(z.literal("")),
   entityId: z.string().uuid(),
   assigneeId: z.string().uuid().optional().or(z.literal("")),
-  responsibleTeamId: z.string().uuid().optional().or(z.literal("")),
+  responsibleTeamId: z.string().uuid(),
   picId: z.string().uuid().optional().or(z.literal("")),
   reviewerId: z.string().uuid().optional().or(z.literal("")),
 });
@@ -60,4 +61,8 @@ export const bulkTaskSchema = z.object({
   responsibleTeamId: z.string().uuid().optional().or(z.literal("")),
   status: z.enum(["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED", "DEFERRED", "NOT_APPLICABLE"]).optional(),
   dueDate: z.string().datetime().optional(),
+});
+
+export const assignPICSchema = z.object({
+  picId: z.string().uuid(),
 });

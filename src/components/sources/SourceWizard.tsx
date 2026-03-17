@@ -17,6 +17,7 @@ type User = {
   id: string;
   name: string;
   email: string;
+  teamMemberships?: { teamId: string }[];
 };
 
 type Entity = {
@@ -2357,30 +2358,60 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                 <div className="space-y-6">
                   {/* Existing Items Section - Only shown when adding to existing source */}
                   {existingSource && items.length > 0 && (
-                    <div className="rounded-[14px] border p-4" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
-                      <h4 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
                         Existing Items ({items.length})
                       </h4>
-                      <div className="space-y-2">
-                        {items.map((item) => (
-                          <div key={item.tempId} className="flex items-center justify-between rounded-lg border bg-white px-4 py-2" style={{ borderColor: "var(--border-light)" }}>
-                            <div className="flex items-center gap-3">
-                              <span className="font-mono text-xs font-bold" style={{ color: "var(--purple)" }}>
-                                {item.reference}
-                              </span>
-                              <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                {item.title}
-                              </span>
+                      <div className="rounded-[14px] border p-4" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
+                        <div className="space-y-2">
+                          {items.map((item) => (
+                            <div
+                              key={item.tempId}
+                              className="rounded-[14px] border bg-white p-4"
+                              style={{ borderColor: "var(--border)" }}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3">
+                                    <span
+                                      className="font-mono text-sm font-medium"
+                                      style={{ color: "var(--text-primary)" }}
+                                    >
+                                      {item.reference}
+                                    </span>
+                                    <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                                      {item.title}
+                                    </span>
+                                    {item.isInformational ? (
+                                      <span
+                                        className="rounded-full px-2 py-0.5 text-xs"
+                                        style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-muted)" }}
+                                      >
+                                        Informational — no tasks
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className="rounded-full px-2 py-0.5 text-xs font-medium"
+                                        style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
+                                      >
+                                        {item.tasks.length} task{item.tasks.length !== 1 ? "s" : ""}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {item.description && (
+                                    <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+                                      {item.description}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                              {item.tasks.length} task{item.tasks.length !== 1 ? "s" : ""}
-                            </span>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
+                        <p className="text-xs mt-3" style={{ color: "var(--text-muted)" }}>
+                          Add new clauses and tasks below. Existing items above will not be modified.
+                        </p>
                       </div>
-                      <p className="text-xs mt-3" style={{ color: "var(--text-muted)" }}>
-                        Add new clauses and tasks below. Existing items above will not be modified.
-                      </p>
                     </div>
                   )}
 
@@ -3225,7 +3256,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                 <div className={selectedTeam?.approvalRequired ? "grid grid-cols-3 gap-4" : "grid grid-cols-2 gap-4"}>
                                   <div>
                                     <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                      Department / Team Responsible
+                                      Department / Team Responsible <span style={{ color: "var(--red)" }}>*</span>
                                     </label>
                                     <select
                                       value={newTaskForm.responsibleTeamId}
@@ -3244,20 +3275,26 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
 
                                   <div>
                                     <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                      Person in Charge (PIC)
+                                      Person in Charge (PIC) <span className="text-xs text-gray-500">(Optional)</span>
                                     </label>
                                     <select
                                       value={newTaskForm.picId}
                                       onChange={(e) => setNewTaskForm({ ...newTaskForm, picId: e.target.value })}
-                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                                      disabled={!newTaskForm.responsibleTeamId}
+                                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)] disabled:cursor-not-allowed disabled:opacity-50"
                                       style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
                                     >
-                                      <option value="">Select PIC...</option>
-                                      {users.map((user) => (
-                                        <option key={user.id} value={user.id}>
-                                          {user.name}
-                                        </option>
-                                      ))}
+                                      <option value="">Select PIC (Optional)</option>
+                                      {users
+                                        .filter((user) => {
+                                          if (!newTaskForm.responsibleTeamId) return false;
+                                          return user.teamMemberships?.some((m: { teamId: string }) => m.teamId === newTaskForm.responsibleTeamId);
+                                        })
+                                        .map((user) => (
+                                          <option key={user.id} value={user.id}>
+                                            {user.name}
+                                          </option>
+                                        ))}
                                     </select>
                                   </div>
 

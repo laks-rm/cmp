@@ -164,6 +164,26 @@ const TaskRow = memo(
           )}
         </td>
         <td className="px-4 py-3">
+          {task.pic ? (
+            <div className="flex items-center gap-2">
+              <div 
+                className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium text-white"
+                style={{ backgroundColor: task.pic.avatarColor || "var(--gray)" }}
+              >
+                {task.pic.initials}
+              </div>
+              <span className="text-sm">{task.pic.name}</span>
+            </div>
+          ) : (
+            <span 
+              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium"
+              style={{ backgroundColor: "var(--amber-light)", color: "var(--amber)" }}
+            >
+              Awaiting PIC
+            </span>
+          )}
+        </td>
+        <td className="px-4 py-3">
           <div className="space-y-1">
             <span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium" style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-secondary)" }}>
               {task.frequency}
@@ -294,6 +314,8 @@ export function TaskTrackerClient() {
         params.set("picId", session.user.userId);
       } else if (filters.preset === "my-team" && session?.user?.teamIds) {
         params.set("responsibleTeamId", session.user.teamIds.join(","));
+      } else if (filters.preset === "awaiting") {
+        params.set("noPIC", "true");
       }
 
       const data = await fetchApi<{ tasks: Task[]; pagination: { total: number } }>(`/api/tasks?${params.toString()}`);
@@ -381,6 +403,7 @@ export function TaskTrackerClient() {
     { id: "all", label: "All", active: filters.preset === "all" },
     { id: "my-tasks", label: "My Tasks", active: filters.preset === "my-tasks", icon: <User size={14} /> },
     { id: "my-team", label: "My Team", active: filters.preset === "my-team", icon: <UserCheck size={14} /> },
+    { id: "awaiting", label: "Awaiting PIC", active: filters.preset === "awaiting", icon: <AlertCircle size={14} /> },
     { id: "overdue", label: "Overdue", active: filters.preset === "overdue", icon: <AlertCircle size={14} /> },
     { id: "pending-review", label: "Pending Review", active: filters.preset === "pending-review", icon: <Clock size={14} /> },
     { id: "due-week", label: "Due This Week", active: filters.preset === "due-week", icon: <CalendarIcon size={14} /> },
@@ -705,6 +728,9 @@ export function TaskTrackerClient() {
                   Team
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                  PIC
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
                   Freq / Quarter
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
@@ -718,13 +744,13 @@ export function TaskTrackerClient() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+                  <td colSpan={11} className="px-4 py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
                     Loading tasks...
                   </td>
                 </tr>
               ) : tasks.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center">
+                  <td colSpan={11} className="px-4 py-12 text-center">
                     <Filter size={48} className="mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
                     <p className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
                       No tasks found

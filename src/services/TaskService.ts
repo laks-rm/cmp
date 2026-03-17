@@ -18,6 +18,8 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma, Task, TaskStatus, Frequency } from "@prisma/client";
 import { logAuditEvent } from "@/lib/audit";
+import { addDays } from "date-fns";
+import { ACTIVATION_THRESHOLD_DAYS, shouldActivateTask } from "@/lib/taskActivation";
 import {
   TaskWithRelations,
   PaginatedResult,
@@ -43,6 +45,7 @@ export type TaskQueryParams = {
   search?: string;
   overdue?: boolean;
   recurrenceGroupId?: string;
+  noPIC?: string;
 } & QueryOptions;
 
 export type TaskCreateInput = {
@@ -216,10 +219,36 @@ export class TaskService {
     // Get existing task
     const existingTask = await this.getTaskById(taskId, context);
 
+    // If responsible team is changing, check if PIC needs to be cleared
+    let updateData = { ...data } as any;
+    if (data.responsibleTeamId && data.responsibleTeamId !== existingTask.responsibleTeamId && existingTask.picId) {
+      const picInNewTeam = await this.validatePICInTeam(existingTask.picId, data.responsibleTeamId);
+      if (!picInNewTeam) {
+        updateData.picId = null;
+        
+        // Log team change with PIC cleared
+        await logAuditEvent({
+          action: "TASK_RESPONSIBLE_TEAM_CHANGED",
+          module: "TASKS",
+          userId: context.userId,
+          entityId: existingTask.entityId,
+          targetType: "Task",
+          targetId: taskId,
+          details: {
+            taskName: existingTask.name,
+            oldTeamId: existingTask.responsibleTeamId,
+            newTeamId: data.responsibleTeamId,
+            picCleared: true,
+            oldPicId: existingTask.picId,
+          },
+        });
+      }
+    }
+
     // Update task
     const updatedTask = await prisma.task.update({
       where: { id: taskId },
-      data: data as any,
+      data: updateData,
       include: this.getDefaultIncludes(),
     });
 
@@ -299,6 +328,13 @@ export class TaskService {
     if (task.status !== "IN_PROGRESS") {
       throw new ValidationError(
         "Task must be IN_PROGRESS to submit for review. Current status: " + task.status
+      );
+    }
+
+    // Business rule: PIC must be assigned
+    if (!task.picId) {
+      throw new ValidationError(
+        "PIC must be assigned before submitting for review"
       );
     }
 
@@ -446,18 +482,128 @@ export class TaskService {
   }
 
   /**
+   * Validate that PIC belongs to the responsible team
+   */
+  async validatePICInTeam(picId: string, teamId: string): Promise<boolean> {
+    const membership = await prisma.teamMembership.findFirst({
+      where: {
+        userId: picId,
+        teamId: teamId,
+      },
+    });
+    return !!membership;
+  }
+
+  /**
+   * Self-assign PIC (team member assigns themselves)
+   */
+  async selfAssignPIC(
+    taskId: string,
+    userId: string,
+    context: ServiceContext
+  ): Promise<TaskWithRelations> {
+    const task = await this.getTaskById(taskId, context);
+
+    // Validate user is in responsible team
+    if (!task.responsibleTeamId) {
+      throw new ValidationError("Task does not have a responsible team assigned");
+    }
+
+    const isTeamMember = await this.validatePICInTeam(userId, task.responsibleTeamId);
+    if (!isTeamMember) {
+      throw new ValidationError(
+        "You must be a member of the responsible team to self-assign"
+      );
+    }
+
+    // Update task
+    const updated = await prisma.task.update({
+      where: { id: taskId },
+      data: { picId: userId },
+      include: this.getDefaultIncludes(),
+    });
+
+    // Audit log
+    await logAuditEvent({
+      action: "TASK_PIC_SELF_ASSIGNED",
+      module: "TASKS",
+      userId: context.userId,
+      entityId: task.entityId,
+      targetType: "Task",
+      targetId: taskId,
+      details: {
+        taskName: task.name,
+        picId: userId,
+      },
+    });
+
+    return updated as TaskWithRelations;
+  }
+
+  /**
+   * Assign PIC (authorized user assigns to team member)
+   */
+  async assignPIC(
+    taskId: string,
+    picId: string,
+    assignedBy: string,
+    context: ServiceContext
+  ): Promise<TaskWithRelations> {
+    const task = await this.getTaskById(taskId, context);
+
+    // Validate responsible team exists
+    if (!task.responsibleTeamId) {
+      throw new ValidationError("Task does not have a responsible team assigned");
+    }
+
+    // Validate new PIC is in responsible team
+    const isTeamMember = await this.validatePICInTeam(picId, task.responsibleTeamId);
+    if (!isTeamMember) {
+      throw new ValidationError(
+        "PIC must be a member of the responsible team"
+      );
+    }
+
+    const oldPicId = task.picId;
+
+    // Update task
+    const updated = await prisma.task.update({
+      where: { id: taskId },
+      data: { picId: picId },
+      include: this.getDefaultIncludes(),
+    });
+
+    // Audit log
+    await logAuditEvent({
+      action: oldPicId ? "TASK_PIC_REASSIGNED" : "TASK_PIC_ASSIGNED",
+      module: "TASKS",
+      userId: assignedBy,
+      entityId: task.entityId,
+      targetType: "Task",
+      targetId: taskId,
+      details: {
+        taskName: task.name,
+        oldPicId,
+        newPicId: picId,
+      },
+    });
+
+    return updated as TaskWithRelations;
+  }
+
+  /**
    * Activate planned tasks (for scheduled jobs)
    */
   async activatePlannedTasks(): Promise<number> {
     const now = new Date();
-    const thirtyDaysAhead = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const thresholdDate = addDays(now, ACTIVATION_THRESHOLD_DAYS);
 
     const result = await prisma.task.updateMany({
       where: {
         status: "PLANNED",
         plannedDate: {
           gte: now,
-          lte: thirtyDaysAhead,
+          lte: thresholdDate,
         },
         deletedAt: null,
       },
@@ -552,6 +698,10 @@ export class TaskService {
       }
     }
 
+    if (params.noPIC === "true") {
+      where.picId = null;
+    }
+
     return where;
   }
 
@@ -632,23 +782,7 @@ export class TaskService {
    * Calculate initial status based on dates
    */
   private calculateInitialStatus(data: TaskCreateInput): TaskStatus {
-    if (!data.dueDate) {
-      return "PLANNED";
-    }
-
-    const now = new Date();
-    const dueDate = new Date(data.dueDate);
-    const daysUntilDue = Math.floor(
-      (dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    // If due within 30 days, start as TO_DO
-    if (daysUntilDue <= 30) {
-      return "TO_DO";
-    }
-
-    // Otherwise, start as PLANNED
-    return "PLANNED";
+    return shouldActivateTask(data.dueDate || null) ? "TO_DO" : "PLANNED";
   }
 
   /**
