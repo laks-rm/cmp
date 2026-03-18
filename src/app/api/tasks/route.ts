@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
 
     const where: Prisma.TaskWhereInput = {
       AND: [getEntityFilter(session)],
+      deletedAt: null, // Exclude soft-deleted tasks
     };
 
     if (params.entityId) {

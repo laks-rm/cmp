@@ -19,7 +19,7 @@ import {
   CheckCircle,
   Clock,
   Filter,
-  Download,
+  Eye,
 } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import toast from "@/lib/toast";
@@ -81,6 +81,29 @@ type Task = {
   completedAt: string | null;
 };
 
+// Template represents the editable recurring task definition
+type TaskTemplate = {
+  recurrenceGroupId: string;
+  name: string;
+  description: string | null;
+  frequency: string;
+  riskRating: string;
+  responsibleTeamId: string | null;
+  responsibleTeam: { id: string; name: string } | null;
+  picId: string | null;
+  pic: { id: string; name: string; initials: string } | null;
+  reviewerId: string | null;
+  reviewer: { id: string; name: string; initials: string } | null;
+  evidenceRequired: boolean;
+  narrativeRequired: boolean;
+  reviewRequired: boolean;
+  entityId: string;
+  entity: { id: string; code: string; name: string };
+  firstDueDate: string | null;
+  instanceCount: number;
+  instances: Task[];
+};
+
 type Team = {
   id: string;
   name: string;
@@ -109,6 +132,18 @@ const RISK_COLORS = {
   LOW: { bg: "var(--green-light)", color: "var(--green)", label: "Low" },
 };
 
+const FREQUENCIES = [
+  { value: "ADHOC", label: "Ad-hoc" },
+  { value: "DAILY", label: "Daily" },
+  { value: "WEEKLY", label: "Weekly" },
+  { value: "MONTHLY", label: "Monthly" },
+  { value: "QUARTERLY", label: "Quarterly" },
+  { value: "SEMI_ANNUAL", label: "Semi-Annual" },
+  { value: "ANNUAL", label: "Annual" },
+  { value: "BIENNIAL", label: "Biennial" },
+  { value: "ONE_TIME", label: "One-Time" },
+];
+
 export function SourceTasksClient({ sourceId }: { sourceId: string }) {
   const router = useRouter();
   const [source, setSource] = useState<Source | null>(null);
@@ -118,8 +153,9 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-  const [editingTask, setEditingTask] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<Task>>({});
+  const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set());
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [entityFilter, setEntityFilter] = useState<string>("");
@@ -132,7 +168,6 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
     try {
       setLoading(true);
       
-      // Fetch source with all related data
       let sourceData: any;
       try {
         sourceData = await fetchApi<any>(`/api/sources/${sourceId}`);
@@ -142,7 +177,6 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
         return;
       }
       
-      // Extract source metadata
       const source: Source = {
         id: sourceData.id,
         code: sourceData.code,
@@ -153,11 +187,9 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
       };
       setSource(source);
       
-      // Extract items from source response
       const itemsData: SourceItem[] = sourceData.items || [];
       setItems(itemsData);
       
-      // Fetch tasks separately
       let tasksData: Task[] = [];
       try {
         const tasksResponse = await fetchApi<{ tasks: Task[] }>(`/api/tasks?sourceId=${sourceId}`);
@@ -166,10 +198,8 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
       } catch (error: any) {
         console.error("Failed to fetch tasks:", error);
         toast.error(`Failed to load tasks: ${error.message || "Unknown error"}`);
-        // Continue anyway - show source without tasks
       }
       
-      // Fetch teams and users in parallel (for dropdowns)
       try {
         const [teamsData, usersData] = await Promise.all([
           fetchApi<Team[]>("/api/teams"),
@@ -179,10 +209,8 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
         setUsers(usersData || []);
       } catch (error: any) {
         console.error("Failed to fetch teams/users:", error);
-        // Non-critical - editing will be limited but view still works
       }
 
-      // Expand all items by default for validation view
       if (itemsData.length > 0) {
         setExpandedItems(new Set(itemsData.map((item) => item.id)));
       }
@@ -204,61 +232,157 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
     setExpandedItems(newExpanded);
   };
 
-  const startEdit = (task: Task) => {
-    setEditingTask(task.id);
+  const toggleTemplate = (templateId: string) => {
+    const newExpanded = new Set(expandedTemplates);
+    if (newExpanded.has(templateId)) {
+      newExpanded.delete(templateId);
+    } else {
+      newExpanded.add(templateId);
+    }
+    setExpandedTemplates(newExpanded);
+  };
+
+  const startEditTemplate = (template: TaskTemplate) => {
+    setEditingTemplateId(template.recurrenceGroupId);
     setEditForm({
-      responsibleTeamId: task.responsibleTeamId,
-      picId: task.picId,
-      reviewerId: task.reviewerId,
-      dueDate: task.dueDate,
-      plannedDate: task.plannedDate,
-      status: task.status,
-      riskRating: task.riskRating,
+      name: template.name,
+      description: template.description,
+      frequency: template.frequency,
+      riskRating: template.riskRating,
+      responsibleTeamId: template.responsibleTeamId,
+      picId: template.picId,
+      reviewerId: template.reviewerId,
+      evidenceRequired: template.evidenceRequired,
+      reviewRequired: template.reviewRequired,
+      narrativeRequired: template.narrativeRequired,
+      firstDueDate: template.firstDueDate,
     });
   };
 
   const cancelEdit = () => {
-    setEditingTask(null);
+    setEditingTemplateId(null);
     setEditForm({});
   };
 
-  const saveEdit = async (taskId: string) => {
+  const saveTemplate = async (recurrenceGroupId: string) => {
+    if (!recurrenceGroupId) {
+      toast.error("Cannot edit: This is not a recurring task template");
+      return;
+    }
+
     try {
       setSaving(true);
-      await fetchApi(`/api/tasks/${taskId}`, {
+      
+      const updates: any = {};
+      if (editForm.name !== undefined) updates.name = editForm.name;
+      if (editForm.description !== undefined) updates.description = editForm.description;
+      if (editForm.frequency !== undefined) updates.frequency = editForm.frequency;
+      if (editForm.riskRating !== undefined) updates.riskRating = editForm.riskRating;
+      if (editForm.responsibleTeamId !== undefined) updates.responsibleTeamId = editForm.responsibleTeamId;
+      if (editForm.picId !== undefined) updates.picId = editForm.picId;
+      if (editForm.reviewerId !== undefined) updates.reviewerId = editForm.reviewerId;
+      if (editForm.evidenceRequired !== undefined) updates.evidenceRequired = editForm.evidenceRequired;
+      if (editForm.reviewRequired !== undefined) updates.reviewRequired = editForm.reviewRequired;
+      if (editForm.narrativeRequired !== undefined) updates.narrativeRequired = editForm.narrativeRequired;
+      if (editForm.firstDueDate !== undefined) updates.firstDueDate = editForm.firstDueDate;
+
+      console.log('[CLIENT] Saving template:', {
+        recurrenceGroupId,
+        updateKeys: Object.keys(updates),
+        updates,
+      });
+
+      await fetchApi("/api/tasks/recurrence-group", {
         method: "PATCH",
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({
+          recurrenceGroupId,
+          updates,
+        }),
       });
       
-      // Update local state
-      setTasks((prev) =>
-        prev.map((t) => (t.id === taskId ? { ...t, ...editForm } : t))
-      );
-      
-      toast.success("Task updated successfully");
-      setEditingTask(null);
+      toast.success("Recurring task template updated successfully");
+      setEditingTemplateId(null);
       setEditForm({});
-    } catch (error) {
-      console.error("Error saving task:", error);
-      toast.error("Failed to update task");
+      
+      await fetchData();
+    } catch (error: any) {
+      console.error("Error saving template:", error);
+      const errorMessage = error?.message || "Failed to update recurring task template";
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }
   };
 
-  // Group tasks by item
+  // Group tasks by item and recurrence group
   const tasksByItem = useMemo(() => {
-    const grouped = new Map<string, Task[]>();
-    const orphanTasks: Task[] = [];
+    const grouped = new Map<string, (Task | TaskTemplate)[]>();
+    const orphanTasks: (Task | TaskTemplate)[] = [];
+
+    // Group tasks by recurrence group
+    const recurrenceGroups = new Map<string, Task[]>();
+    const standaloneTasks: Task[] = [];
 
     tasks.forEach((task) => {
-      if (task.sourceItemId) {
-        if (!grouped.has(task.sourceItemId)) {
-          grouped.set(task.sourceItemId, []);
+      // Only create template if task has a recurrenceGroupId
+      // Tasks with frequency but no recurrenceGroupId (legacy/edge case) are treated as standalone
+      if (task.recurrenceGroupId) {
+        if (!recurrenceGroups.has(task.recurrenceGroupId)) {
+          recurrenceGroups.set(task.recurrenceGroupId, []);
         }
-        grouped.get(task.sourceItemId)!.push(task);
+        recurrenceGroups.get(task.recurrenceGroupId)!.push(task);
       } else {
-        orphanTasks.push(task);
+        standaloneTasks.push(task);
+      }
+    });
+
+    // Create templates from recurrence groups
+    const templates: TaskTemplate[] = [];
+    recurrenceGroups.forEach((instances, recurrenceGroupId) => {
+      if (instances.length === 0) return;
+      
+      instances.sort((a, b) => {
+        if (a.recurrenceIndex !== null && b.recurrenceIndex !== null) {
+          return a.recurrenceIndex - b.recurrenceIndex;
+        }
+        return 0;
+      });
+
+      const firstInstance = instances[0];
+      const template: TaskTemplate = {
+        recurrenceGroupId,
+        name: firstInstance.name,
+        description: firstInstance.description,
+        frequency: firstInstance.frequency,
+        riskRating: firstInstance.riskRating,
+        responsibleTeamId: firstInstance.responsibleTeamId,
+        responsibleTeam: firstInstance.responsibleTeam,
+        picId: firstInstance.picId,
+        pic: firstInstance.pic,
+        reviewerId: firstInstance.reviewerId,
+        reviewer: firstInstance.reviewer,
+        evidenceRequired: firstInstance.evidenceRequired,
+        narrativeRequired: firstInstance.narrativeRequired,
+        reviewRequired: firstInstance.reviewRequired,
+        entityId: firstInstance.entityId,
+        entity: firstInstance.entity,
+        firstDueDate: instances.find((i) => i.dueDate)?.dueDate || null,
+        instanceCount: instances.length,
+        instances,
+      };
+      templates.push(template);
+    });
+
+    // Group by source item
+    [...templates, ...standaloneTasks].forEach((item) => {
+      const sourceItemId = "instances" in item ? item.instances[0].sourceItemId : item.sourceItemId;
+      if (sourceItemId) {
+        if (!grouped.has(sourceItemId)) {
+          grouped.set(sourceItemId, []);
+        }
+        grouped.get(sourceItemId)!.push(item);
+      } else {
+        orphanTasks.push(item);
       }
     });
 
@@ -270,19 +394,23 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
     return items.filter((item) => {
       const itemTasks = tasksByItem.grouped.get(item.id) || [];
       
-      // If no tasks, don't show item
       if (itemTasks.length === 0) return false;
 
-      // Apply status filter
-      if (statusFilter) {
-        const hasMatchingStatus = itemTasks.some((t) => t.status === statusFilter);
-        if (!hasMatchingStatus) return false;
-      }
-
-      // Apply entity filter
-      if (entityFilter) {
-        const hasMatchingEntity = itemTasks.some((t) => t.entity.code === entityFilter);
-        if (!hasMatchingEntity) return false;
+      if (statusFilter || entityFilter) {
+        const hasMatch = itemTasks.some((taskOrTemplate) => {
+          if ("instances" in taskOrTemplate) {
+            return taskOrTemplate.instances.some((t) => {
+              if (statusFilter && t.status !== statusFilter) return false;
+              if (entityFilter && t.entity.code !== entityFilter) return false;
+              return true;
+            });
+          } else {
+            if (statusFilter && taskOrTemplate.status !== statusFilter) return false;
+            if (entityFilter && taskOrTemplate.entity.code !== entityFilter) return false;
+            return true;
+          }
+        });
+        if (!hasMatch) return false;
       }
 
       return true;
@@ -291,6 +419,7 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
 
   const getStatusStyle = (status: string) => STATUS_COLORS[status as keyof typeof STATUS_COLORS] || STATUS_COLORS.TO_DO;
   const getRiskStyle = (risk: string) => RISK_COLORS[risk as keyof typeof RISK_COLORS] || RISK_COLORS.MEDIUM;
+  const getFrequencyLabel = (freq: string) => FREQUENCIES.find((f) => f.value === freq)?.label || freq;
 
   if (loading) {
     return (
@@ -355,7 +484,7 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
               ))}
             </div>
             <p className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>
-              Task validation and metadata management
+              Task template management and metadata editing
             </p>
           </div>
         </div>
@@ -497,28 +626,8 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
           </div>
         ) : (
           filteredItems.map((item) => {
-            const itemTasks = (tasksByItem.grouped.get(item.id) || [])
-              .filter((task) => {
-                if (statusFilter && task.status !== statusFilter) return false;
-                if (entityFilter && task.entity.code !== entityFilter) return false;
-                return true;
-              })
-              .sort((a, b) => {
-                // Sort by recurrence index if available
-                if (a.recurrenceIndex !== null && b.recurrenceIndex !== null) {
-                  return a.recurrenceIndex - b.recurrenceIndex;
-                }
-                // Then by due date
-                if (a.dueDate && b.dueDate) {
-                  return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-                }
-                return 0;
-              });
-
+            const itemTasksOrTemplates = tasksByItem.grouped.get(item.id) || [];
             const isExpanded = expandedItems.has(item.id);
-            const completedCount = itemTasks.filter((t) => t.status === "COMPLETED").length;
-            const missingTeam = itemTasks.filter((t) => !t.responsibleTeamId).length;
-            const missingPIC = itemTasks.filter((t) => !t.picId).length;
 
             return (
               <div
@@ -551,316 +660,52 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
                         )}
                       </div>
                       <div className="flex gap-3 text-sm">
-                        <div className="flex items-center gap-1">
-                          <CheckCircle size={14} style={{ color: "var(--green)" }} />
-                          <span style={{ color: "var(--text-muted)" }}>
-                            {completedCount}/{itemTasks.length}
-                          </span>
-                        </div>
-                        {missingTeam > 0 && (
-                          <div className="flex items-center gap-1">
-                            <Users size={14} style={{ color: "var(--red)" }} />
-                            <span style={{ color: "var(--red)" }}>{missingTeam} no team</span>
-                          </div>
-                        )}
-                        {missingPIC > 0 && (
-                          <div className="flex items-center gap-1">
-                            <UserCheck size={14} style={{ color: "var(--amber)" }} />
-                            <span style={{ color: "var(--amber)" }}>{missingPIC} no PIC</span>
-                          </div>
-                        )}
+                        <span style={{ color: "var(--text-muted)" }}>
+                          {itemTasksOrTemplates.length} task{itemTasksOrTemplates.length !== 1 ? "s" : ""}
+                        </span>
                       </div>
                     </div>
                   </div>
                 </button>
 
-                {/* Tasks */}
+                {/* Task Templates / Tasks */}
                 {isExpanded && (
                   <div className="border-t" style={{ borderColor: "var(--border)" }}>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="bg-[var(--bg-subtle)]">
-                          <tr>
-                            <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                              Task Name
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                              Status
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                              Risk
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                              Frequency
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                              Entity
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                              Due Date
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                              Team
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                              PIC
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                              Reviewer
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                              Flags
-                            </th>
-                            <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                              Actions
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y" style={{ borderColor: "var(--border)" }}>
-                          {itemTasks.map((task) => {
-                            const isEditing = editingTask === task.id;
-                            const statusStyle = getStatusStyle(task.status);
-                            const riskStyle = getRiskStyle(task.riskRating);
-
-                            return (
-                              <tr key={task.id} className="hover:bg-[var(--bg-subtle)]">
-                                <td className="px-4 py-3">
-                                  <div>
-                                    <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                      {task.name}
-                                    </p>
-                                    {task.recurrenceIndex !== null && (
-                                      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                        Instance {task.recurrenceIndex}/{task.recurrenceTotalCount || "∞"}
-                                      </p>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  {isEditing ? (
-                                    <select
-                                      value={editForm.status || task.status}
-                                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                                      className="w-full rounded border px-2 py-1 text-xs"
-                                      style={{ borderColor: "var(--border)" }}
-                                    >
-                                      {Object.entries(STATUS_COLORS).map(([key, value]) => (
-                                        <option key={key} value={key}>
-                                          {value.label}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <span
-                                      className="inline-block rounded-md px-2 py-1 text-xs font-medium"
-                                      style={{
-                                        backgroundColor: statusStyle.bg,
-                                        color: statusStyle.color,
-                                      }}
-                                    >
-                                      {statusStyle.label}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">
-                                  {isEditing ? (
-                                    <select
-                                      value={editForm.riskRating || task.riskRating}
-                                      onChange={(e) => setEditForm({ ...editForm, riskRating: e.target.value })}
-                                      className="w-full rounded border px-2 py-1 text-xs"
-                                      style={{ borderColor: "var(--border)" }}
-                                    >
-                                      {Object.entries(RISK_COLORS).map(([key, value]) => (
-                                        <option key={key} value={key}>
-                                          {value.label}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <span
-                                      className="inline-block rounded-md px-2 py-1 text-xs font-medium"
-                                      style={{
-                                        backgroundColor: riskStyle.bg,
-                                        color: riskStyle.color,
-                                      }}
-                                    >
-                                      {riskStyle.label}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                                    <p>{task.frequency.replace(/_/g, " ")}</p>
-                                    {task.quarter && (
-                                      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                        {task.quarter}
-                                      </p>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <EntityBadge
-                                    entityCode={task.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"}
-                                    size="sm"
-                                  />
-                                </td>
-                                <td className="px-4 py-3">
-                                  {task.dueDate ? (
-                                    <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                                      {new Date(task.dueDate).toLocaleDateString()}
-                                    </div>
-                                  ) : (
-                                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                      No due date
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">
-                                  {isEditing ? (
-                                    <select
-                                      value={editForm.responsibleTeamId || task.responsibleTeamId || ""}
-                                      onChange={(e) =>
-                                        setEditForm({ ...editForm, responsibleTeamId: e.target.value || null })
-                                      }
-                                      className="w-full rounded border px-2 py-1 text-xs"
-                                      style={{ borderColor: "var(--border)" }}
-                                    >
-                                      <option value="">No team</option>
-                                      {teams.map((team) => (
-                                        <option key={team.id} value={team.id}>
-                                          {team.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : task.responsibleTeam ? (
-                                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                                      {task.responsibleTeam.name}
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs" style={{ color: "var(--red)" }}>
-                                      No team
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">
-                                  {isEditing ? (
-                                    <select
-                                      value={editForm.picId || task.picId || ""}
-                                      onChange={(e) => setEditForm({ ...editForm, picId: e.target.value || null })}
-                                      className="w-full rounded border px-2 py-1 text-xs"
-                                      style={{ borderColor: "var(--border)" }}
-                                    >
-                                      <option value="">No PIC</option>
-                                      {users.map((user) => (
-                                        <option key={user.id} value={user.id}>
-                                          {user.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : task.pic ? (
-                                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                                      {task.pic.initials}
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                      —
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">
-                                  {isEditing ? (
-                                    <select
-                                      value={editForm.reviewerId || task.reviewerId || ""}
-                                      onChange={(e) => setEditForm({ ...editForm, reviewerId: e.target.value || null })}
-                                      className="w-full rounded border px-2 py-1 text-xs"
-                                      style={{ borderColor: "var(--border)" }}
-                                    >
-                                      <option value="">No reviewer</option>
-                                      {users.map((user) => (
-                                        <option key={user.id} value={user.id}>
-                                          {user.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : task.reviewer ? (
-                                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                                      {task.reviewer.initials}
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                      —
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex gap-1">
-                                    {task.evidenceRequired && (
-                                      <div
-                                        className="rounded px-1 py-0.5 text-xs"
-                                        style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
-                                        title="Evidence Required"
-                                      >
-                                        E
-                                      </div>
-                                    )}
-                                    {task.reviewRequired && (
-                                      <div
-                                        className="rounded px-1 py-0.5 text-xs"
-                                        style={{ backgroundColor: "var(--purple-light)", color: "var(--purple)" }}
-                                        title="Review Required"
-                                      >
-                                        R
-                                      </div>
-                                    )}
-                                    {task.narrativeRequired && (
-                                      <div
-                                        className="rounded px-1 py-0.5 text-xs"
-                                        style={{ backgroundColor: "var(--green-light)", color: "var(--green)" }}
-                                        title="Narrative Required"
-                                      >
-                                        N
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  {isEditing ? (
-                                    <div className="flex gap-1">
-                                      <button
-                                        onClick={() => saveEdit(task.id)}
-                                        disabled={saving}
-                                        className="rounded p-1 transition-colors hover:bg-[var(--green-light)]"
-                                        style={{ color: "var(--green)" }}
-                                        title="Save"
-                                      >
-                                        <Save size={14} />
-                                      </button>
-                                      <button
-                                        onClick={cancelEdit}
-                                        disabled={saving}
-                                        className="rounded p-1 transition-colors hover:bg-[var(--red-light)]"
-                                        style={{ color: "var(--red)" }}
-                                        title="Cancel"
-                                      >
-                                        <X size={14} />
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      onClick={() => startEdit(task)}
-                                      className="rounded p-1 transition-colors hover:bg-[var(--blue-light)]"
-                                      style={{ color: "var(--blue)" }}
-                                      title="Edit"
-                                    >
-                                      <Edit2 size={14} />
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                    <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+                      {itemTasksOrTemplates.map((taskOrTemplate) => {
+                        if ("instances" in taskOrTemplate) {
+                          return (
+                            <TemplateRow
+                              key={taskOrTemplate.recurrenceGroupId}
+                              template={taskOrTemplate}
+                              isEditing={editingTemplateId === taskOrTemplate.recurrenceGroupId}
+                              editForm={editForm}
+                              setEditForm={setEditForm}
+                              onEdit={() => startEditTemplate(taskOrTemplate)}
+                              onSave={() => saveTemplate(taskOrTemplate.recurrenceGroupId)}
+                              onCancel={cancelEdit}
+                              saving={saving}
+                              teams={teams}
+                              users={users}
+                              expanded={expandedTemplates.has(taskOrTemplate.recurrenceGroupId)}
+                              onToggle={() => toggleTemplate(taskOrTemplate.recurrenceGroupId)}
+                              getRiskStyle={getRiskStyle}
+                              getStatusStyle={getStatusStyle}
+                              getFrequencyLabel={getFrequencyLabel}
+                            />
+                          );
+                        } else {
+                          return (
+                            <StandaloneTaskRow
+                              key={taskOrTemplate.id}
+                              task={taskOrTemplate}
+                              getRiskStyle={getRiskStyle}
+                              getStatusStyle={getStatusStyle}
+                              getFrequencyLabel={getFrequencyLabel}
+                            />
+                          );
+                        }
+                      })}
                     </div>
                   </div>
                 )}
@@ -869,6 +714,427 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
           })
         )}
       </div>
+    </div>
+  );
+}
+
+// Template row component for recurring tasks
+function TemplateRow({
+  template,
+  isEditing,
+  editForm,
+  setEditForm,
+  onEdit,
+  onSave,
+  onCancel,
+  saving,
+  teams,
+  users,
+  expanded,
+  onToggle,
+  getRiskStyle,
+  getStatusStyle,
+  getFrequencyLabel,
+}: {
+  template: TaskTemplate;
+  isEditing: boolean;
+  editForm: any;
+  setEditForm: (form: any) => void;
+  onEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saving: boolean;
+  teams: Team[];
+  users: User[];
+  expanded: boolean;
+  onToggle: () => void;
+  getRiskStyle: (risk: string) => any;
+  getStatusStyle: (status: string) => any;
+  getFrequencyLabel: (freq: string) => string;
+}) {
+  const riskStyle = getRiskStyle(template.riskRating);
+
+  return (
+    <div className="bg-[var(--bg-subtle)]">
+      <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto_auto_auto_auto] gap-4 p-4 items-center">
+        {/* Task Name & Description */}
+        <div>
+          {isEditing ? (
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={editForm.name || ""}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                className="w-full rounded border px-2 py-1 text-sm font-medium"
+                style={{ borderColor: "var(--border)" }}
+                placeholder="Task name"
+              />
+              <textarea
+                value={editForm.description || ""}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                className="w-full rounded border px-2 py-1 text-xs"
+                style={{ borderColor: "var(--border)" }}
+                placeholder="Description"
+                rows={2}
+              />
+            </div>
+          ) : (
+            <div>
+              <p className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+                <RefreshCw size={14} style={{ color: "var(--blue)" }} />
+                {template.name}
+              </p>
+              {template.description && (
+                <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                  {template.description}
+                </p>
+              )}
+              <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                {template.instanceCount} generated instance{template.instanceCount !== 1 ? "s" : ""}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Risk */}
+        <div>
+          {isEditing ? (
+            <select
+              value={editForm.riskRating || template.riskRating}
+              onChange={(e) => setEditForm({ ...editForm, riskRating: e.target.value })}
+              className="rounded border px-2 py-1 text-xs"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+          ) : (
+            <span
+              className="inline-block rounded-md px-2 py-1 text-xs font-medium"
+              style={{ backgroundColor: riskStyle.bg, color: riskStyle.color }}
+            >
+              {riskStyle.label}
+            </span>
+          )}
+        </div>
+
+        {/* Frequency */}
+        <div>
+          {isEditing ? (
+            <select
+              value={editForm.frequency || template.frequency}
+              onChange={(e) => setEditForm({ ...editForm, frequency: e.target.value })}
+              className="rounded border px-2 py-1 text-xs"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <option value="ADHOC">Ad-hoc</option>
+              <option value="DAILY">Daily</option>
+              <option value="WEEKLY">Weekly</option>
+              <option value="MONTHLY">Monthly</option>
+              <option value="QUARTERLY">Quarterly</option>
+              <option value="SEMI_ANNUAL">Semi-Annual</option>
+              <option value="ANNUAL">Annual</option>
+              <option value="BIENNIAL">Biennial</option>
+              <option value="ONE_TIME">One-Time</option>
+            </select>
+          ) : (
+            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {getFrequencyLabel(template.frequency)}
+            </span>
+          )}
+        </div>
+
+        {/* Entity */}
+        <div>
+          <EntityBadge
+            entityCode={template.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"}
+            size="sm"
+          />
+        </div>
+
+        {/* First Due Date */}
+        <div>
+          {isEditing ? (
+            <input
+              type="date"
+              value={editForm.firstDueDate ? editForm.firstDueDate.split("T")[0] : ""}
+              onChange={(e) => setEditForm({ ...editForm, firstDueDate: e.target.value ? new Date(e.target.value).toISOString() : null })}
+              className="rounded border px-2 py-1 text-xs"
+              style={{ borderColor: "var(--border)" }}
+            />
+          ) : template.firstDueDate ? (
+            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {new Date(template.firstDueDate).toLocaleDateString()}
+            </div>
+          ) : (
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              No date
+            </span>
+          )}
+        </div>
+
+        {/* Team */}
+        <div>
+          {isEditing ? (
+            <select
+              value={editForm.responsibleTeamId || template.responsibleTeamId || ""}
+              onChange={(e) => setEditForm({ ...editForm, responsibleTeamId: e.target.value || null })}
+              className="rounded border px-2 py-1 text-xs"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <option value="">No team</option>
+              {teams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </select>
+          ) : template.responsibleTeam ? (
+            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {template.responsibleTeam.name}
+            </span>
+          ) : (
+            <span className="text-xs" style={{ color: "var(--red)" }}>
+              No team
+            </span>
+          )}
+        </div>
+
+        {/* PIC */}
+        <div>
+          {isEditing ? (
+            <select
+              value={editForm.picId || template.picId || ""}
+              onChange={(e) => setEditForm({ ...editForm, picId: e.target.value || null })}
+              className="rounded border px-2 py-1 text-xs"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <option value="">No PIC</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          ) : template.pic ? (
+            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {template.pic.initials}
+            </span>
+          ) : (
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              —
+            </span>
+          )}
+        </div>
+
+        {/* Flags */}
+        <div>
+          <div className="flex gap-1">
+            {template.evidenceRequired && (
+              <div
+                className="rounded px-1 py-0.5 text-xs"
+                style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
+                title="Evidence Required"
+              >
+                E
+              </div>
+            )}
+            {template.reviewRequired && (
+              <div
+                className="rounded px-1 py-0.5 text-xs"
+                style={{ backgroundColor: "var(--purple-light)", color: "var(--purple)" }}
+                title="Review Required"
+              >
+                R
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-1">
+          {isEditing ? (
+            <>
+              <button
+                onClick={onSave}
+                disabled={saving}
+                className="rounded p-1 transition-colors hover:bg-[var(--green-light)]"
+                style={{ color: "var(--green)" }}
+                title="Save"
+              >
+                <Save size={14} />
+              </button>
+              <button
+                onClick={onCancel}
+                disabled={saving}
+                className="rounded p-1 transition-colors hover:bg-[var(--red-light)]"
+                style={{ color: "var(--red)" }}
+                title="Cancel"
+              >
+                <X size={14} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={onEdit}
+                className="rounded p-1 transition-colors hover:bg-[var(--blue-light)]"
+                style={{ color: "var(--blue)" }}
+                title="Edit Template"
+              >
+                <Edit2 size={14} />
+              </button>
+              <button
+                onClick={onToggle}
+                className="rounded p-1 transition-colors hover:bg-[var(--bg-muted)]"
+                style={{ color: "var(--text-muted)" }}
+                title="View Instances"
+              >
+                <Eye size={14} />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded instances */}
+      {expanded && !isEditing && (
+        <div className="border-t px-4 py-2" style={{ borderColor: "var(--border)", backgroundColor: "white" }}>
+          <p className="text-xs font-medium mb-2" style={{ color: "var(--text-muted)" }}>
+            Generated Instances:
+          </p>
+          <div className="space-y-1">
+            {template.instances.map((instance) => {
+              const statusStyle = getStatusStyle(instance.status);
+              return (
+                <div
+                  key={instance.id}
+                  className="flex items-center gap-4 text-xs p-2 rounded"
+                  style={{ backgroundColor: "var(--bg-subtle)" }}
+                >
+                  <span style={{ color: "var(--text-muted)" }}>
+                    #{instance.recurrenceIndex}
+                  </span>
+                  <span
+                    className="inline-block rounded px-2 py-0.5 text-xs font-medium"
+                    style={{ backgroundColor: statusStyle.bg, color: statusStyle.color }}
+                  >
+                    {statusStyle.label}
+                  </span>
+                  {instance.dueDate && (
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      Due: {new Date(instance.dueDate).toLocaleDateString()}
+                    </span>
+                  )}
+                  {instance.quarter && (
+                    <span style={{ color: "var(--text-muted)" }}>
+                      {instance.quarter}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Standalone task row for non-recurring tasks
+function StandaloneTaskRow({
+  task,
+  getRiskStyle,
+  getStatusStyle,
+  getFrequencyLabel,
+}: {
+  task: Task;
+  getRiskStyle: (risk: string) => any;
+  getStatusStyle: (status: string) => any;
+  getFrequencyLabel: (freq: string) => string;
+}) {
+  const riskStyle = getRiskStyle(task.riskRating);
+  const statusStyle = getStatusStyle(task.status);
+
+  return (
+    <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto_auto_auto_auto] gap-4 p-4 items-center">
+      <div>
+        <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+          {task.name}
+        </p>
+        {task.description && (
+          <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+            {task.description}
+          </p>
+        )}
+      </div>
+      <span
+        className="inline-block rounded-md px-2 py-1 text-xs font-medium"
+        style={{ backgroundColor: riskStyle.bg, color: riskStyle.color }}
+      >
+        {riskStyle.label}
+      </span>
+      <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+        {getFrequencyLabel(task.frequency)}
+      </span>
+      <EntityBadge
+        entityCode={task.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"}
+        size="sm"
+      />
+      {task.dueDate ? (
+        <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          {new Date(task.dueDate).toLocaleDateString()}
+        </div>
+      ) : (
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+          No date
+        </span>
+      )}
+      {task.responsibleTeam ? (
+        <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          {task.responsibleTeam.name}
+        </span>
+      ) : (
+        <span className="text-xs" style={{ color: "var(--red)" }}>
+          No team
+        </span>
+      )}
+      {task.pic ? (
+        <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          {task.pic.initials}
+        </span>
+      ) : (
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+          —
+        </span>
+      )}
+      <div className="flex gap-1">
+        {task.evidenceRequired && (
+          <div
+            className="rounded px-1 py-0.5 text-xs"
+            style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}
+            title="Evidence Required"
+          >
+            E
+          </div>
+        )}
+        {task.reviewRequired && (
+          <div
+            className="rounded px-1 py-0.5 text-xs"
+            style={{ backgroundColor: "var(--purple-light)", color: "var(--purple)" }}
+            title="Review Required"
+          >
+            R
+          </div>
+        )}
+      </div>
+      <span
+        className="inline-block rounded-md px-2 py-1 text-xs font-medium"
+        style={{ backgroundColor: statusStyle.bg, color: statusStyle.color }}
+      >
+        {statusStyle.label}
+      </span>
     </div>
   );
 }

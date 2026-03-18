@@ -369,7 +369,10 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
             throw new Error(`Task "${taskData.name}" has entityId ${taskData.entityId} which is not linked to this source`);
           }
           
-          const recurrenceGroupId = uuidv4();
+          // Generate recurrence group ID for non-ADHOC tasks
+          const isRecurring = taskData.frequency !== 'ADHOC';
+          const recurrenceGroupId = isRecurring ? uuidv4() : null;
+          
           const instances = calculateRecurrenceInstances(
             taskData.frequency,
             taskData.dueDate ? new Date(taskData.dueDate) : null,
@@ -413,9 +416,9 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
               reviewRequired: taskData.reviewRequired,
               clickupUrl: taskData.clickupUrl || null,
               gdriveUrl: taskData.gdriveUrl || null,
-              recurrenceGroupId: instances.length > 1 ? recurrenceGroupId : null,
-              recurrenceIndex: instances.length > 1 ? instance.index : null,
-              recurrenceTotalCount: instances.length > 1 ? instance.totalCount : null,
+              recurrenceGroupId,
+              recurrenceIndex: isRecurring ? instance.index : null,
+              recurrenceTotalCount: isRecurring ? instance.totalCount : null,
               status: shouldActivate ? "TO_DO" : "PLANNED",
             });
           }

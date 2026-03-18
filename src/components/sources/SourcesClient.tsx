@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, CheckSquare, AlertTriangle, TrendingUp, FileText, SlidersHorizontal, ChevronDown, ChevronUp, X, Search } from "lucide-react";
+import { Plus, CheckSquare, AlertTriangle, TrendingUp, FileText, SlidersHorizontal, ChevronDown, ChevronUp, X, Search, Edit2 } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { SourceWizard } from "@/components/sources/SourceWizard";
+import { SourceEditModal } from "@/components/sources/SourceEditModal";
 import toast from "@/lib/toast";
 
 type Source = {
@@ -58,7 +59,9 @@ export function SourcesClient() {
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedSourceForTasks, setSelectedSourceForTasks] = useState<Source | null>(null);
+  const [selectedSourceForEdit, setSelectedSourceForEdit] = useState<Source | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState({
@@ -96,9 +99,23 @@ export function SourcesClient() {
     setWizardOpen(true);
   };
 
+  const handleEditSource = (source: Source) => {
+    setSelectedSourceForEdit(source);
+    setEditModalOpen(true);
+  };
+
   const handleWizardClose = () => {
     setWizardOpen(false);
     setSelectedSourceForTasks(null);
+    fetchSources();
+  };
+
+  const handleEditModalClose = () => {
+    setEditModalOpen(false);
+    setSelectedSourceForEdit(null);
+  };
+
+  const handleEditSaved = () => {
     fetchSources();
   };
 
@@ -451,20 +468,24 @@ export function SourcesClient() {
                 {/* Actions */}
                 <div className="flex gap-2">
                   <button
-                    onClick={() => handleViewTasks(source)}
-                    className="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
+                    onClick={() => handleEditSource(source)}
+                    className="rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
                     style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                    title="Edit source metadata and entities"
+                  >
+                    <Edit2 size={16} />
+                  </button>
+                  <button
+                    onClick={() => handleViewTasks(source)}
+                    className="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
+                    style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
                   >
                     View Tasks
                   </button>
                   <button
                     onClick={() => handleAddTasks(source)}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity"
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
                     style={{ backgroundColor: "var(--blue)" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                   >
                     <Plus size={16} />
                     Add Tasks
@@ -481,6 +502,15 @@ export function SourcesClient() {
           isOpen={wizardOpen}
           onClose={handleWizardClose}
           existingSource={selectedSourceForTasks || undefined}
+        />
+      )}
+
+      {editModalOpen && selectedSourceForEdit && (
+        <SourceEditModal
+          isOpen={editModalOpen}
+          onClose={handleEditModalClose}
+          source={selectedSourceForEdit}
+          onSaved={handleEditSaved}
         />
       )}
     </div>

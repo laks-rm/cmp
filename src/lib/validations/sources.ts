@@ -24,6 +24,32 @@ export const updateSourceSchema = createSourceSchema.partial().extend({
   status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
 });
 
+// Schema for controlled source editing with entity change detection
+export const editSourceMetadataSchema = z.object({
+  name: z.string().min(1).max(255).trim().optional(),
+  code: z.string().min(1).max(50).trim().optional(),
+  sourceType: z.enum([
+    "REGULATION",
+    "INDUSTRY_STANDARD",
+    "INTERNAL_AUDIT",
+    "BOARD_DIRECTIVE",
+    "INTERNAL_POLICY",
+    "CONTRACTUAL_OBLIGATION",
+    "REGULATORY_GUIDANCE",
+  ]).optional(),
+  issuingAuthorityId: z.string().uuid().optional().nullable(),
+  effectiveDate: z.string().datetime().optional().nullable(),
+  reviewDate: z.string().datetime().optional().nullable(),
+  entityIds: z.array(z.string().uuid()).min(1).optional(),
+  generateTasksForNewEntities: z.boolean().default(false), // User intent flag
+});
+
+// Schema for generating tasks for specific entities only
+export const generateForEntitiesSchema = z.object({
+  sourceId: z.string().uuid(),
+  entityIds: z.array(z.string().uuid()).min(1),
+});
+
 export const createSourceItemSchema = z.object({
   sourceId: z.string().uuid(),
   reference: z.string().min(1).max(100).trim(),

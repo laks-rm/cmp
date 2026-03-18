@@ -701,6 +701,16 @@ npx prisma db push
 
 **Note:** The schema includes optimized indexes for common query patterns. If you're working with an existing database with significant data, consider using `npx prisma migrate dev` instead to avoid table locks during index creation.
 
+### Data Migrations
+
+After certain bug fixes or feature updates, you may need to run data migration scripts:
+
+**Recurrence Group Fix** (if you have existing recurring tasks):
+```bash
+npx tsx scripts/fix-recurrence-groups.ts
+```
+See [FIX_RECURRENCE_GROUP_QUICK_REF.md](docs/FIX_RECURRENCE_GROUP_QUICK_REF.md) for details.
+
 ### Performance Indexes
 
 The schema includes comprehensive indexes for optimal query performance:

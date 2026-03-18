@@ -2484,12 +2484,45 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                   {/* Existing Items Section - Only shown when adding to existing source */}
                   {existingSource && items.length > 0 && (
                     <div className="space-y-3">
-                      <h4 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                        Existing Items ({items.length})
-                      </h4>
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                          Existing Items ({items.length})
+                        </h4>
+                        <button
+                          onClick={() => {
+                            // Close wizard and navigate to dedicated management screen
+                            window.location.href = `/sources/${existingSource.id}/tasks`;
+                          }}
+                          className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
+                          style={{ borderColor: "var(--blue)", color: "var(--blue)" }}
+                          title="Go to dedicated screen for template-level editing"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                          </svg>
+                          Manage Existing Templates
+                        </button>
+                      </div>
+                      
+                      <div className="rounded-lg border p-3" style={{ borderColor: "var(--blue)", backgroundColor: "var(--blue-light)" }}>
+                        <div className="flex gap-2">
+                          <AlertCircle size={16} style={{ color: "var(--blue)" }} className="flex-shrink-0 mt-0.5" />
+                          <div className="text-xs" style={{ color: "var(--blue-dark)" }}>
+                            <p className="font-medium">Reference Only</p>
+                            <p className="mt-1">
+                              Existing items are shown for reference. To edit existing task templates (frequency, recurrence, metadata), 
+                              use the <strong>"Manage Existing Templates"</strong> button above to go to the dedicated management screen.
+                            </p>
+                            <p className="mt-1">
+                              This wizard is for <strong>adding new clauses and tasks</strong> only.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="rounded-[14px] border p-4" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
-                        <div className="space-y-2">
-                          {items.map((item) => {
+                        <div className="space-y-2">{items.map((item) => {
                             const isExpanded = expandedExistingItems.has(item.id || item.tempId);
                             
                             return (
@@ -2922,7 +2955,8 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                                       <div className="flex gap-2">
                                         <AlertCircle size={14} style={{ color: "var(--blue)" }} className="flex-shrink-0 mt-0.5" />
                                         <p className="text-xs" style={{ color: "var(--blue-dark)" }}>
-                                          Quick edit fields directly in the table. Frequency and due date are locked (already generated). Click edit icon for full details and description.
+                                          <strong>Quick Reference:</strong> You can view existing task details here. 
+                                          For template-level editing (frequency, recurrence patterns), use the "Manage Existing Templates" button above.
                                         </p>
                                       </div>
                                     </div>
@@ -2932,9 +2966,15 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                             );
                           })}
                         </div>
-                        <p className="text-xs mt-3" style={{ color: "var(--text-muted)" }}>
-                          Add new clauses and tasks below. Existing items above will not be modified unless you explicitly edit them.
-                        </p>
+                        <div className="mt-4 rounded-lg border p-3" style={{ borderColor: "var(--border)", backgroundColor: "white" }}>
+                          <p className="text-xs font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                            📝 Adding New Items
+                          </p>
+                          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                            Use the spreadsheet below to <strong>add new clauses and tasks</strong> to this source. 
+                            Existing items shown above will remain unchanged.
+                          </p>
+                        </div>
                       </div>
                     </div>
                   )}
