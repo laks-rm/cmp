@@ -106,8 +106,21 @@ export async function PATCH(req: NextRequest) {
     }
 
     // If frequency or firstDueDate changed, regenerate instances
-    const shouldRegenerateInstances =
-      updates.frequency || updates.firstDueDate;
+    const frequencyChanged = updates.frequency && updates.frequency !== existingTasks[0].frequency;
+    const firstDueDateChanged = updates.firstDueDate && 
+      new Date(updates.firstDueDate).getTime() !== existingTasks[0].dueDate?.getTime();
+    
+    const shouldRegenerateInstances = frequencyChanged || firstDueDateChanged;
+
+    console.log('[RECURRENCE GROUP UPDATE] Change detection:', {
+      frequencyChanged,
+      firstDueDateChanged,
+      shouldRegenerateInstances,
+      oldFrequency: existingTasks[0].frequency,
+      newFrequency: updates.frequency,
+      oldDueDate: existingTasks[0].dueDate?.toISOString(),
+      newDueDate: updates.firstDueDate,
+    });
 
     if (shouldRegenerateInstances) {
       // Get the new parameters
