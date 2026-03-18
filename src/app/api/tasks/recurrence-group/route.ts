@@ -5,8 +5,6 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/permissions";
 import { logAuditEvent } from "@/lib/audit";
 import { z } from "zod";
-import { v4 as uuidv4 } from "uuid";
-import { calculateRecurrenceInstances } from "@/lib/utils";
 
 const updateRecurrenceGroupSchema = z.object({
   recurrenceGroupId: z.string().uuid(),
@@ -105,120 +103,19 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // If frequency or firstDueDate changed, regenerate instances
-    const frequencyChanged = updates.frequency && updates.frequency !== existingTasks[0].frequency;
-    const firstDueDateChanged = updates.firstDueDate && 
-      new Date(updates.firstDueDate).getTime() !== existingTasks[0].dueDate?.getTime();
-    
-    const shouldRegenerateInstances = frequencyChanged || firstDueDateChanged;
-
-    console.log('[RECURRENCE GROUP UPDATE] Change detection:', {
-      frequencyChanged,
-      firstDueDateChanged,
-      shouldRegenerateInstances,
-      oldFrequency: existingTasks[0].frequency,
-      newFrequency: updates.frequency,
-      oldDueDate: existingTasks[0].dueDate?.toISOString(),
-      newDueDate: updates.firstDueDate,
-    });
-
-    if (shouldRegenerateInstances) {
-      // Get the new parameters
-      const newFrequency = updates.frequency || existingTasks[0].frequency;
-      const newFirstDueDate = updates.firstDueDate
-        ? new Date(updates.firstDueDate)
-        : existingTasks[0].dueDate;
-
-      if (!newFirstDueDate) {
-        return NextResponse.json(
-          { error: "Cannot regenerate instances without a due date" },
-          { status: 400 }
-        );
-      }
-
-      // Calculate new instances
-      const newInstances = calculateRecurrenceInstances(
-        newFrequency,
-        newFirstDueDate,
-        existingTasks[0].source.effectiveDate
-      );
-
-      // Create a new recurrence group ID for the regenerated tasks
-      const newRecurrenceGroupId = uuidv4();
-
-      await prisma.$transaction(async (tx) => {
-        // Soft delete old tasks (mark as superseded)
-        await tx.task.updateMany({
-          where: {
-            recurrenceGroupId,
-            deletedAt: null,
-          },
-          data: {
-            deletedAt: new Date(),
-            deletedBy: session.user.userId,
-            deletedReason: "Recurrence pattern updated - instances regenerated",
-          },
-        });
-
-        // Create new tasks with updated instances
-        const tasksToCreate = newInstances.map((instance) => ({
-          sourceId: existingTasks[0].sourceId,
-          sourceItemId: existingTasks[0].sourceItemId,
-          name: updates.name || existingTasks[0].name,
-          description: updates.description !== undefined ? updates.description : existingTasks[0].description,
-          expectedOutcome: updates.expectedOutcome !== undefined ? updates.expectedOutcome : existingTasks[0].expectedOutcome,
-          entityId: existingTasks[0].entityId,
-          frequency: newFrequency,
-          quarter: instance.quarter,
-          riskRating: updates.riskRating || existingTasks[0].riskRating,
-          assigneeId: existingTasks[0].assigneeId,
-          responsibleTeamId: updates.responsibleTeamId !== undefined ? updates.responsibleTeamId : existingTasks[0].responsibleTeamId,
-          picId: updates.picId !== undefined ? updates.picId : existingTasks[0].picId,
-          reviewerId: updates.reviewerId !== undefined ? updates.reviewerId : existingTasks[0].reviewerId,
-          startDate: existingTasks[0].startDate,
-          dueDate: instance.plannedDate,
-          plannedDate: instance.plannedDate,
-          testingPeriodStart: existingTasks[0].testingPeriodStart,
-          testingPeriodEnd: existingTasks[0].testingPeriodEnd,
-          evidenceRequired: updates.evidenceRequired !== undefined ? updates.evidenceRequired : existingTasks[0].evidenceRequired,
-          narrativeRequired: updates.narrativeRequired !== undefined ? updates.narrativeRequired : existingTasks[0].narrativeRequired,
-          reviewRequired: updates.reviewRequired !== undefined ? updates.reviewRequired : existingTasks[0].reviewRequired,
-          clickupUrl: existingTasks[0].clickupUrl,
-          gdriveUrl: existingTasks[0].gdriveUrl,
-          recurrenceGroupId: newRecurrenceGroupId,
-          recurrenceIndex: instance.index,
-          recurrenceTotalCount: instance.totalCount,
-          status: "PLANNED", // All new instances start as PLANNED
-        }));
-
-        await tx.task.createMany({
-          data: tasksToCreate,
-        });
-      });
-
-      await logAuditEvent({
-        action: "RECURRENCE_GROUP_REGENERATED",
-        module: "TASKS",
-        userId: session.user.userId,
-        targetType: "RecurrenceGroup",
-        targetId: recurrenceGroupId,
-        details: {
-          oldGroupId: recurrenceGroupId,
-          newGroupId: newRecurrenceGroupId,
-          oldFrequency: existingTasks[0].frequency,
-          newFrequency,
-          instanceCount: newInstances.length,
-          updates,
+    // Reject any attempts to change frequency or firstDueDate
+    // These fields define the recurrence pattern and cannot be edited
+    if (updates.frequency || updates.firstDueDate) {
+      return NextResponse.json(
+        { 
+          error: "Cannot modify frequency or due date",
+          message: "Frequency and first due date are read-only fields that define the recurrence pattern. To change these, you must create a new source with the desired schedule."
         },
-      });
-
-      return NextResponse.json({
-        success: true,
-        message: "Recurrence group regenerated successfully",
-        newRecurrenceGroupId,
-        instanceCount: newInstances.length,
-      });
+        { status: 400 }
+      );
     }
+
+    console.log('[RECURRENCE GROUP UPDATE] Updating metadata for all instances');
 
     // Simple metadata update - update all tasks in the group
     const updateData: any = {};

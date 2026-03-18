@@ -247,7 +247,7 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
     setEditForm({
       name: template.name,
       description: template.description,
-      frequency: template.frequency,
+      // Frequency and firstDueDate are read-only, not included in edit form
       riskRating: template.riskRating,
       responsibleTeamId: template.responsibleTeamId,
       picId: template.picId,
@@ -255,7 +255,6 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
       evidenceRequired: template.evidenceRequired,
       reviewRequired: template.reviewRequired,
       narrativeRequired: template.narrativeRequired,
-      firstDueDate: template.firstDueDate,
     });
   };
 
@@ -276,7 +275,7 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
       const updates: any = {};
       if (editForm.name !== undefined) updates.name = editForm.name;
       if (editForm.description !== undefined) updates.description = editForm.description;
-      if (editForm.frequency !== undefined) updates.frequency = editForm.frequency;
+      // Frequency and firstDueDate are read-only and not sent
       if (editForm.riskRating !== undefined) updates.riskRating = editForm.riskRating;
       if (editForm.responsibleTeamId !== undefined) updates.responsibleTeamId = editForm.responsibleTeamId;
       if (editForm.picId !== undefined) updates.picId = editForm.picId;
@@ -284,7 +283,6 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
       if (editForm.evidenceRequired !== undefined) updates.evidenceRequired = editForm.evidenceRequired;
       if (editForm.reviewRequired !== undefined) updates.reviewRequired = editForm.reviewRequired;
       if (editForm.narrativeRequired !== undefined) updates.narrativeRequired = editForm.narrativeRequired;
-      if (editForm.firstDueDate !== undefined) updates.firstDueDate = editForm.firstDueDate;
 
       console.log('[CLIENT] Saving template:', {
         recurrenceGroupId,
@@ -819,25 +817,29 @@ function TemplateRow({
           )}
         </div>
 
-        {/* Frequency */}
+        {/* Frequency - READ ONLY */}
         <div>
           {isEditing ? (
-            <select
-              value={editForm.frequency || template.frequency}
-              onChange={(e) => setEditForm({ ...editForm, frequency: e.target.value })}
-              className="rounded border px-2 py-1 text-xs"
-              style={{ borderColor: "var(--border)" }}
-            >
-              <option value="ADHOC">Ad-hoc</option>
-              <option value="DAILY">Daily</option>
-              <option value="WEEKLY">Weekly</option>
-              <option value="MONTHLY">Monthly</option>
-              <option value="QUARTERLY">Quarterly</option>
-              <option value="SEMI_ANNUAL">Semi-Annual</option>
-              <option value="ANNUAL">Annual</option>
-              <option value="BIENNIAL">Biennial</option>
-              <option value="ONE_TIME">One-Time</option>
-            </select>
+            <div className="relative">
+              <select
+                value={template.frequency}
+                disabled
+                className="rounded border px-2 py-1 text-xs bg-gray-50 cursor-not-allowed opacity-75"
+                style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                title="Frequency cannot be changed after task creation"
+              >
+                <option value="ADHOC">Ad-hoc</option>
+                <option value="DAILY">Daily</option>
+                <option value="WEEKLY">Weekly</option>
+                <option value="MONTHLY">Monthly</option>
+                <option value="QUARTERLY">Quarterly</option>
+                <option value="SEMI_ANNUAL">Semi-Annual</option>
+                <option value="ANNUAL">Annual</option>
+                <option value="BIENNIAL">Biennial</option>
+                <option value="ONE_TIME">One-Time</option>
+              </select>
+              <span className="absolute -right-1 -top-1 text-xs" title="Read-only field">🔒</span>
+            </div>
           ) : (
             <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
               {getFrequencyLabel(template.frequency)}
@@ -853,16 +855,20 @@ function TemplateRow({
           />
         </div>
 
-        {/* First Due Date */}
+        {/* First Due Date - READ ONLY */}
         <div>
           {isEditing ? (
-            <input
-              type="date"
-              value={editForm.firstDueDate ? editForm.firstDueDate.split("T")[0] : ""}
-              onChange={(e) => setEditForm({ ...editForm, firstDueDate: e.target.value ? new Date(e.target.value).toISOString() : null })}
-              className="rounded border px-2 py-1 text-xs"
-              style={{ borderColor: "var(--border)" }}
-            />
+            <div className="relative">
+              <input
+                type="date"
+                value={template.firstDueDate ? new Date(template.firstDueDate).toISOString().split("T")[0] : ""}
+                disabled
+                className="rounded border px-2 py-1 text-xs bg-gray-50 cursor-not-allowed opacity-75"
+                style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+                title="First due date cannot be changed after task creation"
+              />
+              <span className="absolute -right-1 -top-1 text-xs" title="Read-only field">🔒</span>
+            </div>
           ) : template.firstDueDate ? (
             <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
               {new Date(template.firstDueDate).toLocaleDateString()}
