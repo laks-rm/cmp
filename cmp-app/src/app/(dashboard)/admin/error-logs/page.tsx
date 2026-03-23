@@ -11,7 +11,7 @@ export const metadata = {
 export default async function ErrorLogsPage() {
   const session = await getServerSession(authOptions);
 
-  if (!session) {
+  if (!session?.user) {
     redirect("/login");
   }
 

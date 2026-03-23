@@ -13,9 +13,11 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@google-cloud/storage": "^7.19.0",
     "@prisma/client": "^5.22.0",
     "@tailwindcss/forms": "^0.5.11",
     "bcryptjs": "^2.4.3",
+    "chart.js": "^4.5.1",
     "csrf": "^3.1.0",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
@@ -26,6 +28,7 @@
     "next-auth": "^4.24.13",
     "pdf-parse": "^2.4.5",
     "react": "^18",
+    "react-chartjs-2": "^5.3.1",
     "react-dom": "^18",
     "react-hot-toast": "^2.6.0",
     "zod": "^3.23.8"
