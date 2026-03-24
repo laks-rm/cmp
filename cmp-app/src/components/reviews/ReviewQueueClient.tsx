@@ -28,7 +28,7 @@ type Task = {
     initials: string;
     avatarColor: string | null;
   } | null;
-  _count: {
+  _count?: {
     evidence: number;
   };
 };
@@ -233,7 +233,7 @@ export function ReviewQueueClient() {
                         <div className="flex items-center gap-1.5">
                           <Paperclip size={14} style={{ color: "var(--text-muted)" }} />
                           <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                            {task._count.evidence}
+                            {task._count?.evidence || 0}
                           </span>
                         </div>
                       </td>
