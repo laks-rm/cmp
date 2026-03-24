@@ -38,9 +38,10 @@ export async function GET(req: NextRequest) {
 
     if (params.status) {
       where.status = params.status;
-    } else {
+    } else if (params.includeAll !== "true") {
       // By default, exclude PLANNED tasks from the task tracker
       // Only show active statuses: TO_DO, IN_PROGRESS, PENDING_REVIEW, COMPLETED, DEFERRED, NOT_APPLICABLE
+      // Calendar view sets includeAll=true to show PLANNED tasks
       where.status = {
         not: "PLANNED"
       };

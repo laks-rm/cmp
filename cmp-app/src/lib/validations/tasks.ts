@@ -21,6 +21,9 @@ export const taskQuerySchema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
+  preset: z.enum(["due-week"]).optional(),
+  noPIC: z.enum(["true", "false"]).optional(),
+  includeAll: z.enum(["true", "false"]).optional(), // For calendar - includes PLANNED tasks
 });
 
 export const createTaskSchema = z.object({

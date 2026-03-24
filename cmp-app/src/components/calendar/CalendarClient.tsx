@@ -61,9 +61,20 @@ export function CalendarClient() {
       if (selectedTeamId !== "ALL") {
         params.set("teamId", selectedTeamId);
       }
+      
+      // For calendar, we want ALL tasks including PLANNED
+      params.set("includeAll", "true");
 
-      const res = await fetch(`/api/tasks?${params.toString()}&limit=1000`);
+      const url = `/api/tasks?${params.toString()}&limit=1000`;
+      console.log("[Calendar] Fetching tasks:", url);
+      console.log("[Calendar] Filters:", { selectedEntityId, selectedTeamId });
+      
+      const res = await fetch(url);
       const data = await res.json();
+      
+      console.log("[Calendar] Tasks received:", data.tasks?.length || 0);
+      console.log("[Calendar] Sample task statuses:", data.tasks?.slice(0, 5).map((t: Task) => t.status));
+      
       setTasks(data.tasks || []);
     } catch (error) {
       console.error("Failed to fetch tasks:", error);

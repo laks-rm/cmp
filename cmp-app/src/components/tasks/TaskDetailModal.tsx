@@ -894,8 +894,18 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                               );
                             })}
                         </div>
-                        <p className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
-                          View other instances in the Calendar
+                        <p className="mt-2 text-xs">
+                          <a 
+                            href="/calendar"
+                            className="transition-colors hover:underline"
+                            style={{ color: "var(--blue)", cursor: "pointer" }}
+                            onClick={() => {
+                              // Close modal when navigating to calendar
+                              onClose();
+                            }}
+                          >
+                            View other instances in the Calendar
+                          </a>
                         </p>
                       </div>
                     </div>

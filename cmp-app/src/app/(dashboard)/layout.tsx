@@ -12,6 +12,7 @@ const NAV_PERMISSION_MAP: Array<{ href: string; module: string; action: string }
   { href: "/", module: "DASHBOARD", action: "VIEW" },
   { href: "/sources", module: "SOURCES", action: "VIEW" },
   { href: "/tasks", module: "TASKS", action: "VIEW" },
+  { href: "/calendar", module: "TASKS", action: "VIEW" },
   { href: "/reviews", module: "REVIEW_QUEUE", action: "VIEW" },
   { href: "/findings", module: "FINDINGS", action: "VIEW" },
   { href: "/reports", module: "REPORTS", action: "VIEW" },

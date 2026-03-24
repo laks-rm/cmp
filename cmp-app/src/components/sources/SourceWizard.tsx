@@ -553,30 +553,29 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       const data = await res.json();
 
       if (!data.isAvailable) {
-        setSourceCodeError("This code is already in use");
-        if (data.suggestedCode) {
-          // Auto-apply suggested code
-          setSourceCode(data.suggestedCode);
-          toast(`Code updated to ${data.suggestedCode} (original was taken)`, {
-            icon: "ℹ️",
-          });
-        }
+        setSourceCodeError("This code is already in use. It will be auto-corrected when you proceed.");
+        // Store suggested code for later use but don't auto-apply here
+        // The final unique code will be determined in handleStep1Next
       }
     } catch (error) {
       console.error("Failed to validate source code:", error);
+      toast.error("Failed to validate source code. Please try again.");
     } finally {
       setIsValidatingCode(false);
     }
   };
 
-  const generateSourceCode = (name: string): string => {
+  const generateSourceCode = (name: string, addTimestamp = false): string => {
     const currentYear = new Date().getFullYear();
     const words = name
       .toUpperCase()
       .split(/\s+/)
       .filter((word) => word.length > 2 && !["THE", "AND", "FOR", "WITH"].includes(word));
 
-    if (words.length === 0) return `SRC-${currentYear}`;
+    if (words.length === 0) {
+      const baseCode = `SRC-${currentYear}`;
+      return addTimestamp ? `${baseCode}-${Date.now().toString().slice(-6)}` : baseCode;
+    }
 
     // Take first letters of significant words, max 3
     const abbreviation = words
@@ -584,14 +583,17 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       .map((word) => word[0])
       .join("");
 
-    return `${abbreviation}-${currentYear}`;
+    const baseCode = `${abbreviation}-${currentYear}`;
+    
+    // Add timestamp component for guaranteed uniqueness if requested
+    return addTimestamp ? `${baseCode}-${Date.now().toString().slice(-6)}` : baseCode;
   };
 
   const handleSourceCodeBlur = () => {
     if (!sourceCode && sourceName) {
-      setSourceCode(generateSourceCode(sourceName));
+      setSourceCode(generateSourceCode(sourceName, false));
     }
-    // Validate uniqueness
+    // Validate uniqueness (just for user feedback, final validation in Step 1)
     if (sourceCode && teamId) {
       validateSourceCode(sourceCode);
     }
@@ -973,31 +975,50 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
       return;
     }
 
-    // Check if source code has validation error
-    if (sourceCodeError) {
-      toast.error("Please fix the source code error before continuing");
-      return;
-    }
+    setLoading(true);
+    
+    try {
+      // Final validation and ensure unique code
+      let finalCode = sourceCode.toUpperCase();
+      
+      // Validate the current code
+      const params = new URLSearchParams({
+        code: finalCode,
+        teamId,
+      });
 
-    // Validate source code one more time before proceeding
-    if (teamId) {
-      await validateSourceCode(sourceCode);
-      // Check again after validation
-      if (sourceCodeError) {
-        toast.error("Source code is not unique");
-        return;
+      if (existingSource?.id) {
+        params.append("excludeId", existingSource.id);
       }
-    }
 
-    if (!existingSource) {
-      // Create draft source
-      try {
-        setLoading(true);
+      const validationRes = await fetch(`/api/sources/validate-code?${params}`);
+      const validationData = await validationRes.json();
+
+      if (!validationData.isAvailable) {
+        // Code is not unique, use suggested code or generate with timestamp
+        if (validationData.suggestedCode) {
+          finalCode = validationData.suggestedCode;
+        } else {
+          // Fallback: generate with timestamp for guaranteed uniqueness
+          finalCode = generateSourceCode(sourceName, true);
+        }
+        
+        // Update the displayed code
+        setSourceCode(finalCode);
+        setSourceCodeError("");
+        
+        toast(`Code updated to ${finalCode} to ensure uniqueness`, {
+          icon: "ℹ️",
+        });
+      }
+
+      if (!existingSource) {
+        // Create draft source with the validated unique code
         const res = await fetch("/api/sources", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            code: sourceCode,
+            code: finalCode,
             name: sourceName,
             sourceType,
             issuingAuthorityId: issuingAuthorityId || null,
@@ -1017,16 +1038,18 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
 
         const createdSource = await res.json();
         setCreatedSourceId(createdSource.id); // Store the created source ID
-        toast.success("Source draft created");
+        toast.success(`Source draft created with code: ${finalCode}`);
         // Move to step 2
         setStep(2);
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "Failed to create source";
-        toast.error(message);
-      } finally {
-        setLoading(false);
       }
-    } else {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to create source";
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+    
+    if (existingSource) {
       setStep(2);
     }
   };
