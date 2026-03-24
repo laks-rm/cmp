@@ -37,6 +37,9 @@ yarn-error.log*
 ecosystem.config.js
 ecosystem.*.js
 
+# Deployment scripts (GCP-specific, not in git)
+deploy.sh
+
 # vercel
 .vercel
 
