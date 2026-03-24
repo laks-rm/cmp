@@ -228,6 +228,7 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
   const [groupByClause, setGroupByClause] = useState(true);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set());
+  const [isPasteFromExcelExpanded, setIsPasteFromExcelExpanded] = useState(false);
 
   // Helper function for positional grouping
   const getClauseGroups = (data: SpreadsheetRow[]): ClauseGroup[] => {
@@ -1903,41 +1904,40 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
           {/* Step 2: Items & Tasks */}
           {step === 2 && (
             <div className="space-y-6">
-              {/* Method Selector - Always visible */}
+              {/* Method Selector - Compact inline design */}
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+                <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
                   Choose how to add clauses and tasks
                 </h3>
 
-                {/* Two prominent cards */}
-                <div className="grid grid-cols-2 gap-4">
+                {/* Three inline cards */}
+                <div className="grid grid-cols-3 gap-3">
                   {/* AI Extract Card */}
                   <button
                     onClick={() => setInputMethod("ai-extract")}
-                    className={`rounded-[14px] border-2 p-6 text-left transition-all ${
+                    className={`rounded-lg border-2 p-4 text-left transition-all ${
                       inputMethod === "ai-extract"
                         ? "border-[var(--blue)] bg-[var(--blue-light)]"
                         : "border-[var(--border)] hover:border-[var(--blue-mid)]"
                     }`}
                   >
-                    <div className="flex items-start gap-4">
+                    <div className="flex items-center gap-3">
                       <div
-                        className="flex h-12 w-12 items-center justify-center rounded-lg"
+                        className="flex h-10 w-10 items-center justify-center rounded-lg flex-shrink-0"
                         style={{
                           backgroundColor:
                             inputMethod === "ai-extract" ? "var(--blue)" : "var(--bg-subtle)",
                           color: inputMethod === "ai-extract" ? "white" : "var(--text-secondary)",
                         }}
                       >
-                        <FileText size={24} />
+                        <FileText size={20} />
                       </div>
-                      <div className="flex-1">
-                        <h4 className="mb-2 text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-                          AI Extract from Document
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
+                          AI Extract
                         </h4>
-                        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                          Upload the regulation PDF and AI will extract clauses and suggest monitoring tasks
-                          automatically. Best for new regulations.
+                        <p className="text-xs leading-tight" style={{ color: "var(--text-secondary)" }}>
+                          Upload PDF for auto-extraction
                         </p>
                       </div>
                     </div>
@@ -1946,44 +1946,62 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                   {/* Spreadsheet Card */}
                   <button
                     onClick={() => setInputMethod("spreadsheet")}
-                    className={`rounded-[14px] border-2 p-6 text-left transition-all ${
+                    className={`rounded-lg border-2 p-4 text-left transition-all ${
                       inputMethod === "spreadsheet"
                         ? "border-[var(--blue)] bg-[var(--blue-light)]"
                         : "border-[var(--border)] hover:border-[var(--blue-mid)]"
                     }`}
                   >
-                    <div className="flex items-start gap-4">
+                    <div className="flex items-center gap-3">
                       <div
-                        className="flex h-12 w-12 items-center justify-center rounded-lg"
+                        className="flex h-10 w-10 items-center justify-center rounded-lg flex-shrink-0"
                         style={{
                           backgroundColor:
                             inputMethod === "spreadsheet" ? "var(--blue)" : "var(--bg-subtle)",
                           color: inputMethod === "spreadsheet" ? "white" : "var(--text-secondary)",
                         }}
                       >
-                        <Table size={24} />
+                        <Table size={20} />
                       </div>
-                      <div className="flex-1">
-                        <h4 className="mb-2 text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
                           Spreadsheet View
                         </h4>
-                        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                          Add clauses and tasks in a fast table format. Paste from Excel or type directly. Best
-                          for 5+ items.
+                        <p className="text-xs leading-tight" style={{ color: "var(--text-secondary)" }}>
+                          Table format, type directly
                         </p>
                       </div>
                     </div>
                   </button>
-                </div>
 
-                {/* Fallback link */}
-                <div className="text-center">
+                  {/* Paste from Excel Card */}
                   <button
-                    onClick={() => setInputMethod("one-by-one")}
-                    className="text-sm font-medium transition-colors hover:underline"
-                    style={{ color: "var(--text-muted)" }}
+                    onClick={() => setIsPasteFromExcelExpanded(!isPasteFromExcelExpanded)}
+                    className={`rounded-lg border-2 p-4 text-left transition-all ${
+                      isPasteFromExcelExpanded
+                        ? "border-[var(--green)] bg-[var(--green-light)]"
+                        : "border-[var(--border)] hover:border-[var(--green-mid)]"
+                    }`}
                   >
-                    or add items one by one →
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="flex h-10 w-10 items-center justify-center rounded-lg flex-shrink-0"
+                        style={{
+                          backgroundColor: isPasteFromExcelExpanded ? "var(--green)" : "var(--bg-subtle)",
+                          color: isPasteFromExcelExpanded ? "white" : "var(--text-secondary)",
+                        }}
+                      >
+                        <Upload size={20} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
+                          Paste from Excel
+                        </h4>
+                        <p className="text-xs leading-tight" style={{ color: "var(--text-secondary)" }}>
+                          Quick bulk import
+                        </p>
+                      </div>
+                    </div>
                   </button>
                 </div>
               </div>
@@ -2381,66 +2399,33 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
               {/* Spreadsheet Method */}
               {inputMethod === "spreadsheet" && (
                 <div className="space-y-6">
-                  {/* Existing Items Section - Only shown when adding to existing source */}
-                  {existingSource && items.length > 0 && (
-                    <div className="rounded-[14px] border p-4" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
-                      <h4 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>
-                        Existing Items ({items.length})
-                      </h4>
-                      <div className="space-y-2">
-                        {items.map((item) => (
-                          <div key={item.tempId} className="flex items-center justify-between rounded-lg border bg-white px-4 py-2" style={{ borderColor: "var(--border-light)" }}>
-                            <div className="flex items-center gap-3">
-                              <span className="font-mono text-xs font-bold" style={{ color: "var(--purple)" }}>
-                                {item.reference}
-                              </span>
-                              <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                {item.title}
-                              </span>
-                            </div>
-                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                              {item.tasks.length} task{item.tasks.length !== 1 ? "s" : ""}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs mt-3" style={{ color: "var(--text-muted)" }}>
-                        Add new clauses and tasks below. Existing items above will not be modified.
+                  {/* Paste from Excel Expandable Panel */}
+                  {isPasteFromExcelExpanded && (
+                    <div className="rounded-lg border p-4" style={{ borderColor: "var(--green)", backgroundColor: "var(--green-light)" }}>
+                      <p className="mb-3 flex items-start gap-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+                        <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                        <span>
+                          Copy rows from Excel and paste here. Expected columns: Reference | Title | Description | Task Name | Frequency | Risk Rating
+                        </span>
                       </p>
+                      <textarea
+                        value={pastedData}
+                        onChange={(e) => setPastedData(e.target.value)}
+                        rows={5}
+                        placeholder="Paste tab-separated data from Excel here..."
+                        className="w-full rounded-lg border px-3 py-2 font-mono text-sm outline-none transition-colors focus:border-[var(--green)] focus:ring-2 focus:ring-[var(--green-light)]"
+                        style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "white" }}
+                      />
+                      <button
+                        onClick={handleParsePastedData}
+                        disabled={!pastedData.trim()}
+                        className="mt-3 h-10 rounded-lg px-4 text-sm font-medium text-white transition-opacity disabled:opacity-40"
+                        style={{ backgroundColor: "var(--green)" }}
+                      >
+                        Parse Pasted Data
+                      </button>
                     </div>
                   )}
-
-                  {/* Paste from Excel Section */}
-                  <div className="rounded-[14px] border p-6" style={{ borderColor: "var(--border)", backgroundColor: "white" }}>
-                    <h4 className="mb-4 text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-                      Paste from Excel
-                    </h4>
-                    <p className="mb-3 flex items-start gap-2 text-xs" style={{ color: "var(--text-muted)" }}>
-                      <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
-                      <span>
-                        Copy rows from Excel and paste here. Expected columns: Reference | Title | Description | Task Name | Frequency | Risk Rating
-                      </span>
-                    </p>
-                    <p className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>
-                      Paste tab-separated data from Excel. Each row becomes a clause. If Task Name column exists, tasks are created automatically.
-                    </p>
-                    <textarea
-                      value={pastedData}
-                      onChange={(e) => setPastedData(e.target.value)}
-                      rows={5}
-                      placeholder="Paste tab-separated data from Excel here..."
-                      className="w-full rounded-lg border px-3 py-2 font-mono text-sm outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
-                      style={{ borderColor: "var(--border)", color: "var(--text-primary)", backgroundColor: "var(--bg-subtle)" }}
-                    />
-                    <button
-                      onClick={handleParsePastedData}
-                      disabled={!pastedData.trim()}
-                      className="mt-3 h-10 rounded-lg px-4 text-sm font-medium text-white transition-opacity disabled:opacity-40"
-                      style={{ backgroundColor: "var(--blue)" }}
-                    >
-                      Parse Pasted Data
-                    </button>
-                  </div>
 
                   {/* Spreadsheet Table - Always Visible */}
                   <>
@@ -3072,16 +3057,6 @@ export function SourceWizard({ isOpen, onClose, existingSource }: SourceWizardPr
                         </tbody>
                       </table>
                     </div>
-
-                    {/* Info Message - only for spreadsheet view */}
-                    {inputMethod === "spreadsheet" && (
-                      <div className="flex items-start gap-2 rounded-lg border p-3" style={{ borderColor: "var(--blue-mid)", backgroundColor: "var(--blue-light)" }}>
-                        <AlertCircle size={16} className="mt-0.5 flex-shrink-0" style={{ color: "var(--blue)" }} />
-                        <p className="text-xs" style={{ color: "var(--text-primary)" }}>
-                          <strong>Auto-syncing:</strong> Data entered here automatically feeds into Steps 3 &amp; 4. No need to click &quot;Apply&quot;.
-                        </p>
-                      </div>
-                    )}
                   </>
                 </div>
               )}
