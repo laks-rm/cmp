@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { fetchApi } from "@/lib/api-client";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -43,25 +43,26 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
   const [loading, setLoading] = useState(true);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchData();
-  }, [sourceId]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const [sourceData, tasksData] = await Promise.all([
-        fetchApi(`/api/sources/${sourceId}`),
-        fetchApi(`/api/tasks?sourceId=${sourceId}`),
+        fetchApi<Source>(`/api/sources/${sourceId}`),
+        fetchApi<Task[]>(`/api/tasks?sourceId=${sourceId}`),
       ]);
       setSource(sourceData);
       setTasks(tasksData);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to load source tasks");
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to load source tasks";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
-  };
+  }, [sourceId]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   if (loading) {
     return (
@@ -105,7 +106,7 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{source.name}</h1>
             <div className="mt-2 flex items-center gap-3">
-              <EntityBadge code={source.entity.code} />
+              <EntityBadge entityCode={source.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} />
               <span className="text-sm text-gray-600">Code: {source.code}</span>
             </div>
           </div>
@@ -156,10 +157,10 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
                     <div className="text-sm font-medium text-gray-900">{task.name}</div>
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
-                    <EntityBadge code={task.entity.code} />
+                    <EntityBadge entityCode={task.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} />
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
-                    <StatusPill status={task.status} />
+                    <StatusPill status={task.status as "PLANNED" | "TO_DO" | "IN_PROGRESS" | "PENDING_REVIEW" | "COMPLETED" | "DEFERRED" | "NOT_APPLICABLE" | "OVERDUE"} />
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
                     <span
@@ -201,9 +202,9 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
 
       {selectedTaskId && (
         <TaskDetailModal
+          isOpen={true}
           taskId={selectedTaskId}
           onClose={() => setSelectedTaskId(null)}
-          onUpdate={fetchData}
         />
       )}
     </div>

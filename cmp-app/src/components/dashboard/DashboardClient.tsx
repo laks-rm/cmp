@@ -2,14 +2,12 @@
 
 import { useEntity } from "@/contexts/EntityContext";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { fetchApi } from "@/lib/api-client";
-import { StatusPill } from "@/components/ui/StatusPill";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { 
   ArrowRight, 
   Clock, 
-  AlertTriangle, 
   FileCheck, 
   UserX,
   TrendingUp,
@@ -87,7 +85,7 @@ type DashboardStats = {
 };
 
 export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
-  const { selectedEntityId, selectedEntity, setEntity } = useEntity();
+  const { selectedEntityId, setEntity } = useEntity();
   const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -124,8 +122,7 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
       setError(null);
       
       const data = await fetchApi<DashboardStats>(
-        `/api/dashboard/stats?entityId=${selectedEntityId}`,
-        { showErrorToast: false }
+        `/api/dashboard/stats?entityId=${selectedEntityId}`
       );
       
       setStats(data);
@@ -147,10 +144,10 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
 
   useEffect(() => {
     fetchDashboardStats();
-  }, [selectedEntityId, retryCount]);
+  }, [selectedEntityId, retryCount, fetchDashboardStats]);
 
-  // Chart colors
-  const colors = {
+  // Chart colors - memoized to avoid recreating on every render
+  const colors = useMemo(() => ({
     completed: "#639922",
     active: "#378ADD",
     inProgress: "#378ADD",
@@ -159,7 +156,7 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
     overdue: "#E24B4A",
     grid: isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
     text: isDarkMode ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.4)",
-  };
+  }), [isDarkMode]);
 
   // Render completion trend chart
   useEffect(() => {
@@ -221,7 +218,7 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
         completionTrendInstanceRef.current.destroy();
       }
     };
-  }, [stats?.completionTrend, isDarkMode]);
+  }, [stats?.completionTrend, colors]);
 
   // Render entity comparison chart
   useEffect(() => {
@@ -287,7 +284,7 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
         entityComparisonInstanceRef.current.destroy();
       }
     };
-  }, [stats?.entityComparison, isDarkMode, setEntity]);
+  }, [stats?.entityComparison, colors, setEntity, isDarkMode]);
 
   // Render team workload chart
   useEffect(() => {
@@ -358,7 +355,7 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
         teamWorkloadInstanceRef.current.destroy();
       }
     };
-  }, [stats?.teamWorkload, isDarkMode, router]);
+  }, [stats?.teamWorkload, colors, router]);
 
   // Render risk rating chart
   useEffect(() => {
@@ -434,9 +431,9 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
         riskRatingInstanceRef.current.destroy();
       }
     };
-  }, [stats?.statusByRiskRating, isDarkMode]);
+  }, [stats?.statusByRiskRating, colors]);
 
-  const entityDisplayName = selectedEntity?.name || selectedEntity?.code || selectedEntityId;
+  const entityDisplayName = selectedEntityId === "GROUP" ? "All Entities" : selectedEntityId;
 
   const formatDueDate = (dateString: string, isOverdue: boolean) => {
     const date = new Date(dateString);
@@ -680,7 +677,7 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
                           : colors.active 
                     }}
                   ></div>
-                  <EntityBadge entityCode={item.entityCode} size="sm" />
+                  <EntityBadge entityCode={item.entityCode as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} size="sm" />
                 </div>
                 <p className="text-sm font-medium leading-tight" style={{ color: "var(--text-primary)" }}>
                   {item.name}
@@ -793,7 +790,7 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
                 onClick={() => router.push(`/tasks?sourceId=${source.sourceId}`)}
               >
                 <div className="mb-1 flex items-center justify-between">
-                  <EntityBadge entityCode={source.entityCode} size="sm" />
+                  <EntityBadge entityCode={source.entityCode as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} size="sm" />
                   <span className="text-xs font-semibold" style={{ color: "var(--red)" }}>
                     {source.overdue} overdue
                   </span>

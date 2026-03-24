@@ -394,7 +394,7 @@ export async function GET(req: NextRequest) {
       status: task.status,
       dueDate: task.dueDate,
       sourceName: task.source?.name || "Unknown Source",
-      isOverdue: task.dueDate < startOfTodayUTC
+      isOverdue: task.dueDate ? task.dueDate < startOfTodayUTC : false
     }));
 
     // Format entity comparison with completion percentage
