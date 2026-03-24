@@ -33,6 +33,10 @@ yarn-error.log*
 .env
 .env*.local
 
+# PM2 ecosystem files (GCP-specific, not in git)
+ecosystem.config.js
+ecosystem.*.js
+
 # vercel
 .vercel
 

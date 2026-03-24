@@ -63,10 +63,9 @@ export async function GET(req: NextRequest) {
     const startOfQuarterOneWeekAgo = startOfQuarter(oneWeekAgo);
     const endOfQuarterOneWeekAgo = endOfQuarter(oneWeekAgo);
 
-    // Base task filter - exclude soft-deleted and PLANNED tasks for most queries
+    // Base task filter
     const baseTaskFilter = {
       ...entityFilter,
-      deletedAt: null,
     };
 
     // Run all queries in parallel
@@ -212,7 +211,6 @@ export async function GET(req: NextRequest) {
           COUNT(CASE WHEN t.status = 'COMPLETED' THEN 1 END)::int as completed
         FROM "Entity" e
         LEFT JOIN "Task" t ON t."entityId" = e.id 
-          AND t."deletedAt" IS NULL
           AND t."dueDate" >= ${startOfQuarterDate}
           AND t."dueDate" <= ${endOfQuarterDate}
         WHERE e.id IN (
@@ -238,7 +236,6 @@ export async function GET(req: NextRequest) {
           COUNT(CASE WHEN task.status NOT IN ('COMPLETED', 'PLANNED') AND task."dueDate" < ${startOfTodayUTC} THEN 1 END)::int as overdue
         FROM "Team" t
         LEFT JOIN "Task" task ON task."responsibleTeamId" = t.id 
-          AND task."deletedAt" IS NULL
           AND task."entityId" = ${entityIdParam}
         WHERE t."isActive" = true
         GROUP BY t.id, t.name
@@ -266,8 +263,7 @@ export async function GET(req: NextRequest) {
         FROM "Source" s
         INNER JOIN "Task" t ON t."sourceId" = s.id
         INNER JOIN "Entity" e ON t."entityId" = e.id
-        WHERE t."deletedAt" IS NULL
-          AND t.status NOT IN ('COMPLETED', 'PLANNED', 'DEFERRED', 'NOT_APPLICABLE')
+        WHERE t.status NOT IN ('COMPLETED', 'PLANNED', 'DEFERRED', 'NOT_APPLICABLE')
           AND t."dueDate" < ${startOfTodayUTC}
           ${!isGroupView ? Prisma.raw(`AND t."entityId" = '${entityIdParam}'`) : Prisma.raw('')}
           ${isGroupView ? Prisma.raw(`AND t."entityId" IN (SELECT UNNEST(ARRAY[${session.user.entityIds?.map(id => `'${id}'`).join(',')}]::text[]))`) : Prisma.raw('')}
@@ -296,8 +292,7 @@ export async function GET(req: NextRequest) {
           COUNT(CASE WHEN status = 'TO_DO' THEN 1 END)::int as "toDo",
           COUNT(CASE WHEN status NOT IN ('COMPLETED', 'PLANNED') AND "dueDate" < ${startOfTodayUTC} THEN 1 END)::int as overdue
         FROM "Task"
-        WHERE "deletedAt" IS NULL
-          AND status != 'PLANNED'
+        WHERE status != 'PLANNED'
           AND "dueDate" >= ${startOfQuarterDate}
           AND "dueDate" <= ${endOfQuarterDate}
           ${!isGroupView ? Prisma.raw(`AND "entityId" = '${entityIdParam}'`) : Prisma.raw('')}
