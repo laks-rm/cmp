@@ -25,7 +25,13 @@ export async function GET(req: NextRequest, context: { params: { id: string } })
             team: true,
           },
         },
-        sourceItem: true,
+        sourceItem: {
+          select: {
+            reference: true,
+            title: true,
+            description: true,
+          },
+        },
         entity: true,
         assignee: {
           select: {
@@ -194,6 +200,35 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
         details: {
           oldPicId: existingTask.picId,
           newPicId: data.picId,
+        },
+      });
+    }
+
+    if (data.reviewerId !== undefined && data.reviewerId !== existingTask.reviewerId) {
+      await logAuditEvent({
+        action: "TASK_REVIEWER_CHANGED",
+        module: "TASKS",
+        userId: session.user.userId,
+        entityId: existingTask.entityId,
+        targetType: "Task",
+        targetId: taskId,
+        details: {
+          oldReviewerId: existingTask.reviewerId,
+          newReviewerId: data.reviewerId,
+        },
+      });
+    }
+
+    if (data.narrative !== undefined && data.narrative !== existingTask.narrative) {
+      await logAuditEvent({
+        action: "TASK_NARRATIVE_UPDATED",
+        module: "TASKS",
+        userId: session.user.userId,
+        entityId: existingTask.entityId,
+        targetType: "Task",
+        targetId: taskId,
+        details: {
+          narrativeLength: data.narrative?.length || 0,
         },
       });
     }

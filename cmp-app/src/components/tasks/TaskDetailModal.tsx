@@ -100,6 +100,8 @@ type Task = {
   };
   sourceItem: {
     reference: string;
+    title: string;
+    description: string | null;
   } | null;
   entity: {
     code: string;
@@ -140,6 +142,8 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated, onNavi
   const [narrative, setNarrative] = useState("");
   const [showInfoCallout, setShowInfoCallout] = useState(true);
   const [showFindingModal, setShowFindingModal] = useState(false);
+  const [auditLogError, setAuditLogError] = useState<string | null>(null);
+  const [showSourceClauseExpanded, setShowSourceClauseExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Check localStorage for dismissed info callout
@@ -163,6 +167,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated, onNavi
   const fetchTaskData = async () => {
     try {
       setLoading(true);
+      setAuditLogError(null);
       const [taskRes, evidenceRes, commentsRes, auditRes, reviewersRes] = await Promise.all([
         fetch(`/api/tasks/${taskId}`),
         fetch(`/api/evidence?taskId=${taskId}`),
@@ -178,9 +183,24 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated, onNavi
       setNarrative(taskData.narrative || "");
       setSelectedReviewerId(taskData.reviewerId || "");
 
+      // Set default tab: Evidence for completed tasks, otherwise Details
+      if (taskData.status === "COMPLETED") {
+        setActiveTab("evidence");
+      }
+
       if (evidenceRes.ok) setEvidence(await evidenceRes.json());
       if (commentsRes.ok) setComments(await commentsRes.json());
-      if (auditRes.ok) setAuditLog(await auditRes.json());
+      
+      if (auditRes.ok) {
+        const auditData = await auditRes.json();
+        // Handle both array response and paginated response
+        setAuditLog(Array.isArray(auditData) ? auditData : auditData.entries || []);
+      } else if (auditRes.status === 403) {
+        setAuditLogError("audit_permission_denied");
+      } else {
+        setAuditLogError("audit_fetch_failed");
+      }
+      
       if (reviewersRes.ok) setReviewers(await reviewersRes.json());
 
       // Fetch recurrence group tasks if this task belongs to a recurrence group
@@ -502,9 +522,16 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated, onNavi
                   {task.riskRating} Risk
                 </span>
                 <EntityBadge entityCode={task.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} />
-                <span className="text-sm font-mono" style={{ color: "var(--text-secondary)" }}>
+                <button
+                  onClick={() => window.location.href = `/tasks?sourceId=${task.source.id}`}
+                  className="text-sm font-mono transition-opacity hover:underline"
+                  style={{ color: "var(--text-secondary)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.7")}
+                  onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                  title="View all tasks from this source"
+                >
                   {task.source.code} · {task.sourceItem?.reference || "N/A"}
-                </span>
+                </button>
               </div>
             </div>
 
@@ -804,6 +831,72 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated, onNavi
                     )}
                   </div>
 
+                  {/* Source & Clause Context */}
+                  <div className="rounded-lg border p-4" style={{ backgroundColor: "var(--bg-subtle)", borderColor: "var(--border)" }}>
+                    <h4 className="mb-3 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                      Source & Regulatory Context
+                    </h4>
+                    <div className="space-y-3">
+                      {/* Source */}
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                          Source
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => window.location.href = `/tasks?sourceId=${task.source.id}`}
+                            className="text-sm font-medium transition-opacity hover:underline"
+                            style={{ color: "var(--blue)" }}
+                            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                          >
+                            {task.source.name}
+                          </button>
+                          <span className="rounded px-1.5 py-0.5 text-xs font-mono" style={{ backgroundColor: "var(--bg-muted)", color: "var(--text-secondary)" }}>
+                            {task.source.code}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Clause/Item */}
+                      {task.sourceItem && (
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                            Clause / Requirement
+                          </label>
+                          <div className="space-y-2">
+                            <div className="flex items-start gap-2">
+                              <span className="rounded px-1.5 py-0.5 text-xs font-mono font-medium" style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}>
+                                {task.sourceItem.reference}
+                              </span>
+                              <span className="text-sm font-medium flex-1" style={{ color: "var(--text-primary)" }}>
+                                {task.sourceItem.title}
+                              </span>
+                            </div>
+                            {task.sourceItem.description && (
+                              <div>
+                                <button
+                                  onClick={() => setShowSourceClauseExpanded(!showSourceClauseExpanded)}
+                                  className="text-xs font-medium transition-opacity hover:underline"
+                                  style={{ color: "var(--blue)" }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                                >
+                                  {showSourceClauseExpanded ? "Hide" : "Show"} full requirement description
+                                </button>
+                                {showSourceClauseExpanded && (
+                                  <div className="mt-2 rounded-lg p-3 text-sm leading-relaxed" style={{ backgroundColor: "white", color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}>
+                                    {task.sourceItem.description}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Requirements Checklist - Only show for TO_DO or IN_PROGRESS */}
                   {(isToDo || isInProgress) && (
                     <div className="rounded-lg border p-4" style={{ backgroundColor: "var(--bg-subtle)", borderColor: "var(--border)" }}>
@@ -827,8 +920,31 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated, onNavi
                               {task.evidenceRequired ? (
                                 <>
                                   <span className="font-medium">Evidence upload required</span>
-                                  {evidenceMet && <span className="ml-2 text-xs" style={{ color: "var(--green)" }}>({evidence.length} file{evidence.length !== 1 ? 's' : ''} uploaded)</span>}
+                                  {evidenceMet && (
+                                    <button
+                                      onClick={() => setActiveTab("evidence")}
+                                      className="ml-2 text-xs transition-opacity hover:underline"
+                                      style={{ color: "var(--green)" }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                                    >
+                                      ({evidence.length} file{evidence.length !== 1 ? 's' : ''} uploaded)
+                                    </button>
+                                  )}
                                   {!evidenceMet && <span className="ml-2 text-xs" style={{ color: "var(--red)" }}>(Not yet uploaded)</span>}
+                                </>
+                              ) : evidence.length > 0 ? (
+                                <>
+                                  Evidence upload — optional
+                                  <button
+                                    onClick={() => setActiveTab("evidence")}
+                                    className="ml-2 text-xs transition-opacity hover:underline"
+                                    style={{ color: "var(--blue)" }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                                    onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                                  >
+                                    ({evidence.length} file{evidence.length !== 1 ? 's' : ''} uploaded)
+                                  </button>
                                 </>
                               ) : (
                                 "Evidence upload — optional"
@@ -1263,28 +1379,109 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated, onNavi
 
               {activeTab === "history" && (
                 <div className="space-y-3">
-                  {auditLog.length > 0 ? (
-                    auditLog.map((entry) => (
-                      <div key={entry.id} className="flex gap-3">
-                        <div className="relative pt-1.5">
-                          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--blue)" }} />
-                          {entry.id !== auditLog[auditLog.length - 1].id && (
-                            <div className="absolute left-1 top-3 h-full w-px" style={{ backgroundColor: "var(--border-light)" }} />
-                          )}
-                        </div>
-                        <div className="flex-1 pb-4">
-                          <p className="text-sm" style={{ color: "var(--text-primary)" }}>
-                            <strong>{entry.user?.name ?? "System"}</strong> {entry.action.toLowerCase().replace(/_/g, " ")}
-                            {entry.details && typeof entry.details === "object" && "oldStatus" in entry.details && "newStatus" in entry.details && (
-                              <> from <strong>{String(entry.details.oldStatus).replace(/_/g, " ")}</strong> to <strong>{String(entry.details.newStatus).replace(/_/g, " ")}</strong></>
+                  {auditLogError === "audit_permission_denied" ? (
+                    <div className="rounded-lg border p-6 text-center" style={{ backgroundColor: "var(--amber-light)", borderColor: "var(--amber)" }}>
+                      <AlertTriangle size={24} className="mx-auto mb-2" style={{ color: "var(--amber)" }} />
+                      <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                        History requires audit log permission
+                      </p>
+                      <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                        Contact your administrator to request AUDIT_LOG:VIEW permission
+                      </p>
+                    </div>
+                  ) : auditLogError ? (
+                    <div className="rounded-lg border p-6 text-center" style={{ backgroundColor: "var(--red-light)", borderColor: "var(--red)" }}>
+                      <AlertTriangle size={24} className="mx-auto mb-2" style={{ color: "var(--red)" }} />
+                      <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                        Failed to load history
+                      </p>
+                    </div>
+                  ) : auditLog.length > 0 ? (
+                    auditLog.map((entry) => {
+                      // Determine action label and color
+                      let actionLabel = entry.action.toLowerCase().replace(/_/g, " ");
+                      let dotColor = "var(--blue)";
+                      
+                      switch (entry.action) {
+                        case "TASK_STATUS_CHANGED":
+                          actionLabel = "changed status";
+                          dotColor = "var(--blue)";
+                          break;
+                        case "EVIDENCE_UPLOADED":
+                          actionLabel = "uploaded evidence";
+                          dotColor = "var(--green)";
+                          break;
+                        case "EVIDENCE_DELETED":
+                          actionLabel = "deleted evidence";
+                          dotColor = "var(--red)";
+                          break;
+                        case "COMMENT_ADDED":
+                          actionLabel = "added comment";
+                          dotColor = "var(--purple)";
+                          break;
+                        case "TASK_PIC_CHANGED":
+                          actionLabel = "changed person in charge";
+                          dotColor = "var(--blue)";
+                          break;
+                        case "TASK_REVIEWER_CHANGED":
+                          actionLabel = "changed reviewer";
+                          dotColor = "var(--blue)";
+                          break;
+                        case "TASK_ASSIGNED":
+                          actionLabel = "changed assignee";
+                          dotColor = "var(--blue)";
+                          break;
+                        case "TASK_NARRATIVE_UPDATED":
+                          actionLabel = "updated narrative";
+                          dotColor = "var(--amber)";
+                          break;
+                      }
+
+                      // Extract details for display
+                      const details = entry.details as Record<string, unknown> | null;
+                      const fileName = details?.fileName as string | undefined;
+                      const oldStatus = details?.oldStatus as string | undefined;
+                      const newStatus = details?.newStatus as string | undefined;
+
+                      return (
+                        <div key={entry.id} className="flex gap-3">
+                          <div className="relative pt-1.5">
+                            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: dotColor }} />
+                            {entry.id !== auditLog[auditLog.length - 1].id && (
+                              <div className="absolute left-1 top-3 h-full w-px" style={{ backgroundColor: "var(--border-light)" }} />
                             )}
-                          </p>
-                          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                            {format(new Date(entry.createdAt), "MMM d, yyyy 'at' h:mm a")}
-                          </p>
+                          </div>
+                          <div className="flex-1 pb-4">
+                            <p className="text-sm" style={{ color: "var(--text-primary)" }}>
+                              <strong>{entry.user?.name ?? "System"}</strong> {actionLabel}
+                              {oldStatus && newStatus && (
+                                <>
+                                  {" from "}
+                                  <strong style={{ color: "var(--text-secondary)" }}>
+                                    {oldStatus.replace(/_/g, " ")}
+                                  </strong>
+                                  {" to "}
+                                  <strong style={{ color: dotColor }}>
+                                    {newStatus.replace(/_/g, " ")}
+                                  </strong>
+                                </>
+                              )}
+                              {fileName && (
+                                <>
+                                  {" — "}
+                                  <span className="font-mono text-xs" style={{ color: "var(--text-secondary)" }}>
+                                    {fileName}
+                                  </span>
+                                </>
+                              )}
+                            </p>
+                            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                              {format(new Date(entry.createdAt), "MMM d, yyyy 'at' h:mm a")}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <p className="text-center text-sm" style={{ color: "var(--text-muted)" }}>
                       No history available
