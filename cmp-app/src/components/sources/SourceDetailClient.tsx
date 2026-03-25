@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, ChevronDown, ChevronUp, Edit, Plus, CheckCircle, Clock, AlertTriangle, Circle, Trash2 } from "lucide-react";
+import { ChevronRight, ChevronDown, ChevronUp, Plus, CheckCircle, Clock, AlertTriangle, Circle, Trash2 } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { SOURCE_TYPE_COLORS, ITEM_LABEL_MAP, FREQUENCY_LABELS, RISK_COLORS } from "@/types/source-management";
 import type { TaskDefinition } from "@/types/source-management";
@@ -25,6 +25,7 @@ type Task = {
   recurrenceIndex: number | null;
   recurrenceTotalCount: number | null;
   dueDate: string | null;
+  plannedDate: string | null;
   narrative: string | null;
   entity: {
     id: string;
@@ -47,6 +48,19 @@ type Task = {
     id: string;
     name: string;
   } | null;
+};
+
+type GroupedTask = {
+  id: string;
+  representativeTask: Task;
+  instances: Task[];
+  completedCount: number;
+  totalCount: number;
+  currentInstance: Task | null;
+  nextDueInstance: Task | null;
+  isOverdue: boolean;
+  nextDueDate: string | null;
+  clauseReference: string;
 };
 
 type SourceItem = {
@@ -96,6 +110,83 @@ type SourceDetailClientProps = {
 type ViewMode = "by-clause" | "by-task";
 type Tab = "clauses-tasks" | "evidence" | "findings" | "activity";
 
+// Helper function to group tasks by recurrence
+function groupTasksByRecurrence(items: SourceItem[]): GroupedTask[] {
+  const grouped: GroupedTask[] = [];
+  const processedGroups = new Set<string>();
+
+  items.forEach((item) => {
+    item.tasks.forEach((task) => {
+      const groupKey = task.recurrenceGroupId || task.id;
+      
+      if (processedGroups.has(groupKey)) return;
+      processedGroups.add(groupKey);
+
+      // Find all instances in this group
+      const instances = task.recurrenceGroupId
+        ? items.flatMap((i) => 
+            i.tasks.filter((t) => t.recurrenceGroupId === task.recurrenceGroupId)
+          )
+        : [task];
+
+      // Sort by recurrenceIndex or by plannedDate
+      instances.sort((a, b) => {
+        if (a.recurrenceIndex !== null && b.recurrenceIndex !== null) {
+          return a.recurrenceIndex - b.recurrenceIndex;
+        }
+        if (a.plannedDate && b.plannedDate) {
+          return new Date(a.plannedDate).getTime() - new Date(b.plannedDate).getTime();
+        }
+        return 0;
+      });
+
+      const completedCount = instances.filter((i) => i.status === "COMPLETED").length;
+      
+      // Find current instance: first TO_DO or IN_PROGRESS
+      let currentInstance = instances.find((i) => i.status === "TO_DO" || i.status === "IN_PROGRESS");
+      
+      // If none, find the latest COMPLETED
+      if (!currentInstance) {
+        const completed = instances.filter((i) => i.status === "COMPLETED");
+        currentInstance = completed[completed.length - 1] || null;
+      }
+      
+      // If still none, use first PLANNED
+      if (!currentInstance) {
+        currentInstance = instances.find((i) => i.status === "PLANNED") || instances[0];
+      }
+
+      // Find next due instance: first non-completed, sorted by due date
+      const nonCompleted = instances.filter((i) => i.status !== "COMPLETED");
+      const nextDueInstance = nonCompleted.sort((a, b) => {
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      })[0] || null;
+
+      const now = new Date();
+      const isOverdue = nextDueInstance 
+        ? !!(nextDueInstance.dueDate && new Date(nextDueInstance.dueDate) < now && nextDueInstance.status !== "COMPLETED")
+        : false;
+
+      grouped.push({
+        id: groupKey,
+        representativeTask: task,
+        instances,
+        completedCount,
+        totalCount: instances.length,
+        currentInstance: currentInstance || instances[0],
+        nextDueInstance,
+        isOverdue,
+        nextDueDate: nextDueInstance?.dueDate || null,
+        clauseReference: item.reference,
+      });
+    });
+  });
+
+  return grouped;
+}
+
 type DeletePreview = {
   taskId: string;
   taskName: string;
@@ -114,7 +205,6 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("by-clause");
   const [expandAll, setExpandAll] = useState(false);
   const [expandedClauses, setExpandedClauses] = useState<Set<string>>(new Set());
-  const [isEditingSource, setIsEditingSource] = useState(false);
   const [isAddingClause, setIsAddingClause] = useState(false);
   const [editingClauseId, setEditingClauseId] = useState<string | null>(null);
   const [addingTaskToClauseId, setAddingTaskToClauseId] = useState<string | null>(null);
@@ -205,9 +295,17 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
         throw new Error(data.error || "Failed to create clause");
       }
 
+      const newClause = await res.json();
+      
       toast.success("Clause added successfully");
       setNewClauseForm({ reference: "", title: "", description: "" });
       setIsAddingClause(false);
+      
+      // Expand the new clause and open the add task form
+      const expandedArray = Array.from(expandedClauses);
+      setExpandedClauses(new Set([...expandedArray, newClause.id]));
+      setAddingTaskToClauseId(newClause.id);
+      
       fetchSource();
     } catch (error) {
       console.error("Error adding clause:", error);
@@ -479,27 +577,37 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
   const typeConfig = SOURCE_TYPE_COLORS[source.sourceType as keyof typeof SOURCE_TYPE_COLORS];
   const itemLabel = ITEM_LABEL_MAP[source.sourceType] || { singular: "Clause", plural: "Clauses" };
   
-  // Calculate stats - only count generated tasks
-  const totalGeneratedTasks = source.items.reduce((sum, item) => sum + item.tasks.length, 0);
+  // Calculate stats - only count tasks due to date
+  const now = new Date();
+  const allTasks = source.items.flatMap((item) => item.tasks);
+  
   const totalPendingTasks = source.items.reduce(
     (sum, item) => sum + (item.metadata?.pendingTasks?.length || 0),
     0
   );
-  const completedTasks = source.items.reduce(
-    (sum, item) => sum + item.tasks.filter((t) => t.status === "COMPLETED").length,
-    0
-  );
-  const overdueTasks = source.items.reduce(
-    (sum, item) =>
-      sum +
-      item.tasks.filter((t) => {
-        if (t.status === "COMPLETED" || t.status === "PLANNED") return false;
-        if (!t.dueDate) return false;
-        return new Date(t.dueDate) < new Date();
-      }).length,
-    0
-  );
-  const completionPercentage = totalGeneratedTasks > 0 ? Math.round((completedTasks / totalGeneratedTasks) * 100) : 0;
+  
+  // Tasks due to date: dueDate is set and <= today
+  const tasksDueToDate = allTasks.filter((t) => t.dueDate && new Date(t.dueDate) <= now);
+  const completedOnTime = tasksDueToDate.filter((t) => t.status === "COMPLETED").length;
+  const completionPercentage = tasksDueToDate.length > 0 
+    ? Math.round((completedOnTime / tasksDueToDate.length) * 100) 
+    : 0;
+  
+  // Overdue: dueDate < today and not completed
+  const overdueTasks = allTasks.filter((t) => {
+    if (t.status === "COMPLETED") return false;
+    if (!t.dueDate) return false;
+    return new Date(t.dueDate) < now;
+  }).length;
+  
+  // Upcoming: TO_DO tasks with future due dates (next 30 days)
+  const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const upcomingTasks = allTasks.filter((t) => {
+    if (t.status !== "TO_DO" && t.status !== "PLANNED") return false;
+    if (!t.dueDate) return false;
+    const due = new Date(t.dueDate);
+    return due >= now && due <= thirtyDaysFromNow;
+  }).length;
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--bg-primary)" }}>
@@ -577,15 +685,7 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
           </div>
           <div className="rounded-[14px] border bg-white p-4" style={{ borderColor: "var(--border)" }}>
             <p className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-              Total Tasks
-            </p>
-            <p className="mt-1 text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
-              {totalGeneratedTasks}
-            </p>
-          </div>
-          <div className="rounded-[14px] border bg-white p-4" style={{ borderColor: "var(--border)" }}>
-            <p className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-              Completion
+              On Track
             </p>
             <div className="mt-1 flex items-center gap-3">
               <p className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
@@ -601,6 +701,9 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                 />
               </div>
             </div>
+            <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+              {completedOnTime}/{tasksDueToDate.length} tasks due to date
+            </p>
           </div>
           <div className="rounded-[14px] border bg-white p-4" style={{ borderColor: "var(--border)" }}>
             <p className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
@@ -608,6 +711,14 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
             </p>
             <p className="mt-1 text-2xl font-bold" style={{ color: overdueTasks > 0 ? "var(--red)" : "var(--text-primary)" }}>
               {overdueTasks}
+            </p>
+          </div>
+          <div className="rounded-[14px] border bg-white p-4" style={{ borderColor: "var(--border)" }}>
+            <p className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+              Upcoming (30d)
+            </p>
+            <p className="mt-1 text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
+              {upcomingTasks}
             </p>
           </div>
         </div>
@@ -624,7 +735,7 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                   {totalPendingTasks} task definition{totalPendingTasks > 1 ? "s" : ""} pending generation
                 </p>
                 <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-                  These tasks haven't been generated yet. Review and generate them to create task instances.
+                  These tasks haven&apos;t been generated yet. Review and generate them to create task instances.
                 </p>
               </div>
               <button
@@ -739,8 +850,10 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                   const isEditingThisClause = editingClauseId === item.id;
                   const pendingTasks = (item.metadata?.pendingTasks || []) as PendingTaskDefinition[];
                   const generatedTasks = item.tasks;
+                  
+                  // Group tasks by recurrence for this clause
+                  const groupedTasks = groupTasksByRecurrence([item]);
                   const completedCount = generatedTasks.filter((t) => t.status === "COMPLETED").length;
-                  const totalTaskCount = generatedTasks.length + pendingTasks.length;
                   const progress = generatedTasks.length > 0 ? Math.round((completedCount / generatedTasks.length) * 100) : 0;
                   
                   return (
@@ -852,9 +965,13 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                             <PendingTaskRow key={task.tempId} task={task} />
                           ))}
 
-                          {/* Generated Tasks */}
-                          {generatedTasks.map((task) => (
-                            <TaskRow key={task.id} task={task} onDelete={() => handleDeleteTaskClick(task)} />
+                          {/* Grouped Tasks */}
+                          {groupedTasks.map((group) => (
+                            <GroupedTaskRow 
+                              key={group.id} 
+                              group={group} 
+                              onDelete={() => handleDeleteTaskClick(group.currentInstance!)} 
+                            />
                           ))}
                           
                           {/* Add Task Form */}
@@ -911,7 +1028,7 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                                 </button>
                               </div>
                               <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                Note: This will be added as a pending task definition. Click "Generate" to create actual task instances.
+                                Note: This will be added as a pending task definition. Click &quot;Generate&quot; to create actual task instances.
                               </p>
                             </div>
                           ) : (
@@ -1004,7 +1121,13 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                         Entity
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase" style={{ color: "var(--text-secondary)" }}>
-                        Status
+                        Team
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase" style={{ color: "var(--text-secondary)" }}>
+                        Current Status
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase" style={{ color: "var(--text-secondary)" }}>
+                        Next Due
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase" style={{ color: "var(--text-secondary)" }}>
                         Frequency
@@ -1016,36 +1139,63 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                         PIC
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase" style={{ color: "var(--text-secondary)" }}>
+                        Progress
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase" style={{ color: "var(--text-secondary)" }}>
                         Actions
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {source.items.flatMap((item) =>
-                      item.tasks.map((task) => (
+                    {groupTasksByRecurrence(source.items).map((group) => {
+                      const task = group.representativeTask;
+                      const currentTask = group.currentInstance!;
+                      const now = new Date();
+                      const isOverdue = group.nextDueDate && new Date(group.nextDueDate) < now && currentTask.status !== "COMPLETED";
+                      
+                      return (
                         <tr
-                          key={task.id}
+                          key={group.id}
                           className="cursor-pointer transition-colors hover:bg-[var(--bg-hover)]"
                           style={{ borderBottom: "1px solid var(--border-light)" }}
+                          onClick={() => router.push(`/tasks/${currentTask.id}`)}
                         >
-                          <td className="px-4 py-3" onClick={() => router.push(`/tasks/${task.id}`)}>
+                          <td className="px-4 py-3">
                             <span className="text-sm" style={{ color: "var(--text-primary)" }}>{task.name}</span>
                           </td>
-                          <td className="px-4 py-3" onClick={() => router.push(`/tasks/${task.id}`)}>
-                            <span className="font-mono text-xs" style={{ color: "var(--text-muted)" }}>{item.reference}</span>
+                          <td className="px-4 py-3">
+                            <span className="font-mono text-xs" style={{ color: "var(--text-muted)" }}>{group.clauseReference}</span>
                           </td>
-                          <td className="px-4 py-3" onClick={() => router.push(`/tasks/${task.id}`)}>
+                          <td className="px-4 py-3">
                             <EntityBadge entityCode={task.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} />
                           </td>
-                          <td className="px-4 py-3" onClick={() => router.push(`/tasks/${task.id}`)}>
-                            <StatusPill status={task.status} />
+                          <td className="px-4 py-3">
+                            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                              {task.responsibleTeam?.name || "—"}
+                            </span>
                           </td>
-                          <td className="px-4 py-3" onClick={() => router.push(`/tasks/${task.id}`)}>
-                            <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                          <td className="px-4 py-3">
+                            <StatusPill status={currentTask.status} />
+                          </td>
+                          <td className="px-4 py-3">
+                            {group.nextDueDate ? (
+                              <span 
+                                className="text-xs font-medium" 
+                                style={{ color: isOverdue ? "var(--red)" : "var(--text-secondary)" }}
+                              >
+                                {isOverdue ? "Overdue: " : "Due: "}
+                                {new Date(group.nextDueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              </span>
+                            ) : (
+                              <span className="text-xs" style={{ color: "var(--text-muted)" }}>—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
                               {FREQUENCY_LABELS[task.frequency]}
                             </span>
                           </td>
-                          <td className="px-4 py-3" onClick={() => router.push(`/tasks/${task.id}`)}>
+                          <td className="px-4 py-3">
                             <span
                               className="rounded-md px-2 py-0.5 text-xs font-medium"
                               style={{
@@ -1056,16 +1206,21 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                               {task.riskRating}
                             </span>
                           </td>
-                          <td className="px-4 py-3" onClick={() => router.push(`/tasks/${task.id}`)}>
-                            <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                          <td className="px-4 py-3">
+                            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
                               {task.pic?.name || "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                              {group.completedCount}/{group.totalCount}
                             </span>
                           </td>
                           <td className="px-4 py-3">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDeleteTaskClick(task);
+                                handleDeleteTaskClick(currentTask);
                               }}
                               className="rounded p-1 transition-colors hover:bg-[var(--red-light)]"
                               style={{ color: "var(--red)" }}
@@ -1075,8 +1230,8 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                             </button>
                           </td>
                         </tr>
-                      ))
-                    )}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1222,33 +1377,89 @@ function PendingTaskRow({ task }: { task: PendingTaskDefinition }) {
   );
 }
 
-// TaskRow component for generated tasks
-function TaskRow({ task, onDelete }: { task: Task; onDelete: () => void }) {
+// GroupedTaskRow component for task definitions with instances
+function GroupedTaskRow({ group, onDelete }: { group: GroupedTask; onDelete: () => void }) {
   const router = useRouter();
+  const task = group.representativeTask;
+  const currentTask = group.currentInstance!;
+  const now = new Date();
+  const isOverdue = group.nextDueDate && new Date(group.nextDueDate) < now && currentTask.status !== "COMPLETED";
   
   return (
     <div
       className="flex items-center gap-3 rounded-lg border p-3 transition-colors cursor-pointer hover:bg-[var(--bg-hover)]"
       style={{ borderColor: "var(--border-light)" }}
     >
-      <div className="flex-1 flex items-center gap-3" onClick={() => router.push(`/tasks/${task.id}`)}>
+      <div 
+        className="flex-1 flex items-center gap-3 flex-wrap" 
+        onClick={() => router.push(`/tasks/${currentTask.id}`)}
+      >
         <EntityBadge entityCode={task.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} />
-        <span className="flex-1 text-sm" style={{ color: "var(--text-primary)" }}>
+        <span className="flex-1 min-w-[200px] text-sm" style={{ color: "var(--text-primary)" }}>
           {task.name}
         </span>
-        <StatusPill status={task.status} />
-        {task.recurrenceTotalCount && task.recurrenceTotalCount > 1 && task.quarter && (
+        
+        {/* Frequency badge */}
+        {task.recurrenceTotalCount && task.recurrenceTotalCount > 1 && (
           <span
             className="rounded-md px-2 py-0.5 text-xs font-medium"
-            style={{
-              backgroundColor: task.status === "COMPLETED" ? "var(--green-light)" : "var(--bg-muted)",
-              color: task.status === "COMPLETED" ? "var(--green)" : "var(--text-muted)",
-            }}
+            style={{ backgroundColor: "var(--bg-muted)", color: "var(--text-secondary)" }}
           >
-            {task.quarter}
+            {FREQUENCY_LABELS[task.frequency]}
           </span>
         )}
+        
+        {/* Risk badge */}
+        <span
+          className="rounded-md px-2 py-0.5 text-xs font-medium"
+          style={{
+            backgroundColor: RISK_COLORS[task.riskRating].bg,
+            color: RISK_COLORS[task.riskRating].color,
+          }}
+        >
+          {task.riskRating}
+        </span>
+        
+        {/* PIC */}
+        {task.pic && (
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {task.pic.name}
+          </span>
+        )}
+        
+        {/* Team */}
+        {task.responsibleTeam && (
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {task.responsibleTeam.name}
+          </span>
+        )}
+        
+        {/* Current status */}
+        <StatusPill status={currentTask.status} />
+        
+        {/* Next due date */}
+        {group.nextDueDate && (
+          <span 
+            className="text-xs font-medium" 
+            style={{ color: isOverdue ? "var(--red)" : "var(--text-muted)" }}
+          >
+            {isOverdue ? "Overdue: " : "Due: "}
+            {new Date(group.nextDueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+          </span>
+        )}
+        
+        {/* Progress indicator */}
+        <span 
+          className="rounded-md px-2 py-0.5 text-xs font-medium"
+          style={{ 
+            backgroundColor: "var(--bg-subtle)", 
+            color: "var(--text-secondary)" 
+          }}
+        >
+          {group.completedCount}/{group.totalCount} done
+        </span>
       </div>
+      
       <button
         onClick={(e) => {
           e.stopPropagation();
