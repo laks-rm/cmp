@@ -205,6 +205,7 @@ export function SourceTasksClient({ sourceId }: { sourceId: string }) {
           isOpen={true}
           taskId={selectedTaskId}
           onClose={() => setSelectedTaskId(null)}
+          onNavigateToTask={(taskId) => setSelectedTaskId(taskId)}
         />
       )}
     </div>

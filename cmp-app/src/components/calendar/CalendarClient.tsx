@@ -72,8 +72,14 @@ export function CalendarClient() {
       const res = await fetch(url);
       const data = await res.json();
       
+      console.log("[Calendar] === FETCH RESULTS ===");
       console.log("[Calendar] Tasks received:", data.tasks?.length || 0);
-      console.log("[Calendar] Sample task statuses:", data.tasks?.slice(0, 5).map((t: Task) => t.status));
+      console.log("[Calendar] URL used:", url);
+      console.log("[Calendar] First 3 tasks:");
+      data.tasks?.slice(0, 3).forEach((t: Task, i: number) => {
+        console.log(`  ${i + 1}. "${t.name}" - dueDate: ${t.dueDate}, plannedDate: ${t.plannedDate}, status: ${t.status}`);
+      });
+      console.log("[Calendar] ======================");
       
       setTasks(data.tasks || []);
     } catch (error) {
@@ -290,6 +296,14 @@ export function CalendarClient() {
     const currentYear = getYear(currentDate);
     const months = Array.from({ length: 12 }, (_, i) => i);
 
+    console.log("[Calendar YearView] Current year:", currentYear);
+    console.log("[Calendar YearView] Total tasks:", tasks.length);
+    console.log("[Calendar YearView] Sample task dates:", tasks.slice(0, 5).map(t => ({
+      name: t.name,
+      dueDate: t.dueDate,
+      plannedDate: t.plannedDate
+    })));
+
     return (
       <div className="grid grid-cols-4 gap-4">
         {months.map((monthIndex) => {
@@ -298,11 +312,23 @@ export function CalendarClient() {
           const monthTasks = tasks.filter((task) => {
             const taskDate = task.plannedDate || task.dueDate;
             if (!taskDate) return false;
-            const date = parseISO(taskDate);
-            return getMonth(date) === monthIndex && getYear(date) === currentYear;
+            try {
+              const date = parseISO(taskDate);
+              const taskMonth = getMonth(date);
+              const taskYear = getYear(date);
+              if (monthIndex === 2 && tasks.length > 0) { // March, only log once
+                console.log(`[Calendar YearView] Task "${task.name}": date=${taskDate}, parsed month=${taskMonth}, year=${taskYear}, current year=${currentYear}, match=${taskMonth === monthIndex && taskYear === currentYear}`);
+              }
+              return taskMonth === monthIndex && taskYear === currentYear;
+            } catch (error) {
+              console.error(`[Calendar YearView] Failed to parse date for task "${task.name}":`, taskDate, error);
+              return false;
+            }
           });
 
+          const plannedCount = monthTasks.filter((t) => t.status === "PLANNED").length;
           const completedCount = monthTasks.filter((t) => t.status === "COMPLETED").length;
+          const activeCount = monthTasks.length - plannedCount - completedCount;
           const completionRate = monthTasks.length > 0 ? Math.round((completedCount / monthTasks.length) * 100) : 0;
           const intensity = Math.min(monthTasks.length / 10, 1);
 
@@ -326,13 +352,18 @@ export function CalendarClient() {
                 <div className="text-2xl font-bold" style={{ color: "var(--blue)" }}>
                   {monthTasks.length}
                 </div>
-                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                  {completedCount} completed
-                </div>
                 {monthTasks.length > 0 && (
-                  <div className="text-sm font-medium" style={{ color: completionRate >= 70 ? "var(--green)" : "var(--amber)" }}>
-                    {completionRate}% complete
-                  </div>
+                  <>
+                    <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                      {completedCount} completed · {activeCount} active
+                      {plannedCount > 0 && (
+                        <span style={{ color: "#9AA0A6" }}> · {plannedCount} planned</span>
+                      )}
+                    </div>
+                    <div className="text-sm font-medium" style={{ color: completionRate >= 70 ? "var(--green)" : "var(--amber)" }}>
+                      {completionRate}% complete
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -548,6 +579,7 @@ export function CalendarClient() {
           taskId={modalTaskId}
           onClose={() => setModalTaskId(null)}
           onTaskUpdated={fetchTasks}
+          onNavigateToTask={(taskId) => setModalTaskId(taskId)}
         />
       )}
     </div>

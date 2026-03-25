@@ -272,6 +272,7 @@ export function ReviewQueueClient() {
           taskId={selectedTaskId}
           onClose={() => setSelectedTaskId(null)}
           onTaskUpdated={fetchTasks}
+          onNavigateToTask={(taskId) => setSelectedTaskId(taskId)}
         />
       )}
     </div>

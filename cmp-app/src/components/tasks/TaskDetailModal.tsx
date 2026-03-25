@@ -120,9 +120,10 @@ type TaskDetailModalProps = {
   taskId: string;
   onClose: () => void;
   onTaskUpdated?: () => void;
+  onNavigateToTask?: (taskId: string) => void;
 };
 
-export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: TaskDetailModalProps) {
+export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated, onNavigateToTask }: TaskDetailModalProps) {
   const { data: session } = useSession();
   const [task, setTask] = useState<Task | null>(null);
   const [evidence, setEvidence] = useState<Evidence[]>([]);
@@ -601,19 +602,79 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                         Person in Charge (PIC)
                       </label>
                       {task.pic ? (
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
-                            style={{ background: task.pic.avatarColor || "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)" }}
-                          >
-                            {task.pic.initials}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
+                              style={{ background: task.pic.avatarColor || "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)" }}
+                            >
+                              {task.pic.initials}
+                            </div>
+                            <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                              {task.pic.name}
+                            </span>
                           </div>
-                          <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                            {task.pic.name}
-                          </span>
+                          {!isPIC && session?.user.userId && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/tasks/${taskId}`, {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ picId: session.user.userId }),
+                                  });
+
+                                  if (!res.ok) throw new Error("Failed to reassign PIC");
+
+                                  toast.success("PIC reassigned to you");
+                                  await fetchTaskData();
+                                  if (onTaskUpdated) onTaskUpdated();
+                                } catch (error) {
+                                  console.error("Reassign PIC error:", error);
+                                  toast.error("Failed to reassign PIC");
+                                }
+                              }}
+                              className="mt-1.5 text-xs font-medium transition-opacity hover:underline"
+                              style={{ color: "var(--blue)" }}
+                              onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                            >
+                              Reassign to me
+                            </button>
+                          )}
                         </div>
                       ) : (
-                        <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not assigned</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not assigned</span>
+                          {session?.user.userId && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/tasks/${taskId}`, {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ picId: session.user.userId }),
+                                  });
+
+                                  if (!res.ok) throw new Error("Failed to assign PIC");
+
+                                  toast.success("PIC assigned to you");
+                                  await fetchTaskData();
+                                  if (onTaskUpdated) onTaskUpdated();
+                                } catch (error) {
+                                  console.error("Assign PIC error:", error);
+                                  toast.error("Failed to assign PIC");
+                                }
+                              }}
+                              className="text-xs font-medium transition-opacity hover:underline"
+                              style={{ color: "var(--blue)" }}
+                              onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                            >
+                              Assign to me
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
 
@@ -860,29 +921,77 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                               const isCurrent = recTask.id === task.id;
                               const isCompleted = recTask.status === "COMPLETED";
                               const isPlanned = recTask.status === "PLANNED";
-                              
+                              const isToDo = recTask.status === "TO_DO";
+                              const isInProgress = recTask.status === "IN_PROGRESS";
+                              const isDeferred = recTask.status === "DEFERRED";
+                              const isPendingReview = recTask.status === "PENDING_REVIEW";
+                              const taskDate = recTask.dueDate ? new Date(recTask.dueDate) : null;
+                              const isOverdue = taskDate && taskDate < new Date() && recTask.status !== "COMPLETED";
+
+                              let pillColor = "#F1F3F8";
+                              let pillBorderColor = "var(--border)";
+                              let textColor = "#5F6368";
+
+                              if (isCompleted) {
+                                pillColor = "var(--green)";
+                                pillBorderColor = "var(--green)";
+                                textColor = "white";
+                              } else if (isOverdue) {
+                                pillColor = "white";
+                                pillBorderColor = "var(--red)";
+                                textColor = "var(--red)";
+                              } else if (isInProgress) {
+                                pillColor = "var(--blue)";
+                                pillBorderColor = "var(--blue)";
+                                textColor = "white";
+                              } else if (isPendingReview) {
+                                pillColor = "var(--amber-light)";
+                                pillBorderColor = "var(--amber)";
+                                textColor = "var(--amber)";
+                              } else if (isDeferred) {
+                                pillColor = "var(--purple-light)";
+                                pillBorderColor = "var(--purple)";
+                                textColor = "var(--purple)";
+                              } else if (isToDo) {
+                                pillColor = "white";
+                                pillBorderColor = "var(--blue)";
+                                textColor = "var(--blue)";
+                              } else if (isPlanned) {
+                                pillColor = "#E8EAED";
+                                pillBorderColor = "#E8EAED";
+                                textColor = "#9AA0A6";
+                              }
+
+                              if (isCurrent) {
+                                pillBorderColor = "var(--blue)";
+                              }
+
                               return (
-                                <div
+                                <button
                                   key={recTask.id}
-                                  className="flex flex-col items-center gap-1 rounded-lg border p-2"
+                                  onClick={() => {
+                                    if (recTask.id !== task.id) {
+                                      if (onNavigateToTask) {
+                                        onNavigateToTask(recTask.id);
+                                      }
+                                    }
+                                  }}
+                                  className="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all hover:shadow-md"
                                   style={{
-                                    borderColor: isCurrent ? "var(--blue)" : "var(--border)",
+                                    borderWidth: isCurrent ? "2px" : "1px",
+                                    borderColor: pillBorderColor,
                                     backgroundColor: isCurrent ? "var(--blue-light)" : "white",
                                     minWidth: "80px",
+                                    cursor: recTask.id !== task.id ? "pointer" : "default",
                                   }}
-                                  title={`${recTask.quarter || ""} - ${recTask.status}`}
+                                  title={`${recTask.quarter || format(new Date(recTask.plannedDate || recTask.dueDate || ""), "MMM")} - ${recTask.status.replace("_", " ")}`}
                                 >
                                   <div
-                                    className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold"
+                                    className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold transition-transform hover:scale-110"
                                     style={{
-                                      backgroundColor: isCompleted
-                                        ? "var(--green)"
-                                        : isPlanned
-                                        ? "#E8EAED"
-                                        : isCurrent
-                                        ? "var(--blue)"
-                                        : "#F1F3F8",
-                                      color: isCompleted || isCurrent ? "white" : "#5F6368",
+                                      backgroundColor: pillColor,
+                                      color: textColor,
+                                      border: `2px solid ${pillBorderColor}`,
                                     }}
                                   >
                                     {isCompleted ? "✓" : recTask.recurrenceIndex}
@@ -890,23 +999,32 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated }: Task
                                   <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
                                     {recTask.quarter || format(new Date(recTask.plannedDate || recTask.dueDate || ""), "MMM")}
                                   </span>
-                                </div>
+                                </button>
                               );
                             })}
                         </div>
-                        <p className="mt-2 text-xs">
-                          <a 
-                            href="/calendar"
-                            className="transition-colors hover:underline"
-                            style={{ color: "var(--blue)", cursor: "pointer" }}
-                            onClick={() => {
-                              // Close modal when navigating to calendar
-                              onClose();
-                            }}
-                          >
-                            View other instances in the Calendar
-                          </a>
-                        </p>
+                        
+                        {/* Progress Summary */}
+                        {(() => {
+                          const completed = recurrenceTasks.filter((t) => t.status === "COMPLETED").length;
+                          const inProgress = recurrenceTasks.filter((t) => t.status === "IN_PROGRESS").length;
+                          const planned = recurrenceTasks.filter((t) => t.status === "PLANNED").length;
+                          const deferred = recurrenceTasks.filter((t) => t.status === "DEFERRED").length;
+                          const pendingReview = recurrenceTasks.filter((t) => t.status === "PENDING_REVIEW").length;
+                          
+                          const parts = [];
+                          if (completed > 0) parts.push(`${completed} completed`);
+                          if (inProgress > 0) parts.push(`${inProgress} in progress`);
+                          if (pendingReview > 0) parts.push(`${pendingReview} pending review`);
+                          if (deferred > 0) parts.push(`${deferred} deferred`);
+                          if (planned > 0) parts.push(`${planned} planned`);
+                          
+                          return (
+                            <p className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
+                              {parts.join(" · ")}
+                            </p>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}

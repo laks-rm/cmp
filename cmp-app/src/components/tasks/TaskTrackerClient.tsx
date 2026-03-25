@@ -795,6 +795,7 @@ export function TaskTrackerClient() {
           taskId={modalTaskId}
           onClose={() => setModalTaskId(null)}
           onTaskUpdated={fetchTasks}
+          onNavigateToTask={(taskId) => setModalTaskId(taskId)}
         />
       )}
     </div>
