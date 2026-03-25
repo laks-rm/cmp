@@ -115,6 +115,9 @@ type Task = {
   responsibleTeamId: string | null;
   picId: string | null;
   reviewerId: string | null;
+  _count?: {
+    evidence: number;
+  };
 };
 
 type TaskDetailModalProps = {
@@ -1027,9 +1030,29 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated, onNavi
                         Recurrence
                       </label>
                       <div className="rounded-lg border p-4" style={{ backgroundColor: "var(--bg-subtle)", borderColor: "var(--border)" }}>
-                        <p className="mb-3 text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                          {task.frequency.replace("_", " ")} task — instance {task.recurrenceIndex} of {task.recurrenceTotalCount} ({task.quarter || format(new Date(task.plannedDate || task.dueDate || ""), "MMM yyyy")})
-                        </p>
+                        <div className="mb-3 flex items-center justify-between">
+                          <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                            {task.frequency.replace("_", " ")} task — instance {task.recurrenceIndex} of {task.recurrenceTotalCount} ({task.quarter || format(new Date(task.plannedDate || task.dueDate || ""), "MMM yyyy")})
+                          </p>
+                          {task.recurrenceIndex && task.recurrenceIndex > 1 && (() => {
+                            const prevInstance = recurrenceTasks.find(t => t.recurrenceIndex === (task.recurrenceIndex! - 1));
+                            if (prevInstance && onNavigateToTask) {
+                              return (
+                                <button
+                                  onClick={() => onNavigateToTask(prevInstance.id)}
+                                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+                                  style={{ backgroundColor: "var(--blue)", color: "white" }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                                >
+                                  <RotateCcw size={14} />
+                                  View previous instance
+                                </button>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
                         <div className="flex items-center gap-2 overflow-x-auto pb-2">
                           {recurrenceTasks
                             .sort((a, b) => (a.recurrenceIndex || 0) - (b.recurrenceIndex || 0))
@@ -1043,6 +1066,7 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated, onNavi
                               const isPendingReview = recTask.status === "PENDING_REVIEW";
                               const taskDate = recTask.dueDate ? new Date(recTask.dueDate) : null;
                               const isOverdue = taskDate && taskDate < new Date() && recTask.status !== "COMPLETED";
+                              const evidenceCount = recTask._count?.evidence || 0;
 
                               let pillColor = "#F1F3F8";
                               let pillBorderColor = "var(--border)";
@@ -1082,40 +1106,82 @@ export function TaskDetailModal({ isOpen, taskId, onClose, onTaskUpdated, onNavi
                                 pillBorderColor = "var(--blue)";
                               }
 
+                              // Build summary text for tooltip and display
+                              let summaryText = "";
+                              if (isCompleted && recTask.completedAt) {
+                                summaryText = `Completed ${format(new Date(recTask.completedAt), "MMM d, yyyy")}`;
+                              } else if (isInProgress) {
+                                summaryText = "In progress";
+                              } else if (isPendingReview) {
+                                summaryText = "Pending review";
+                              } else if (isPlanned && recTask.plannedDate) {
+                                summaryText = `Planned for ${format(new Date(recTask.plannedDate), "MMM d, yyyy")}`;
+                              } else if (isToDo && recTask.dueDate) {
+                                summaryText = `Due ${format(new Date(recTask.dueDate), "MMM d, yyyy")}`;
+                              } else {
+                                summaryText = recTask.status.replace("_", " ");
+                              }
+
+                              if (evidenceCount > 0) {
+                                summaryText += ` · ${evidenceCount} file${evidenceCount !== 1 ? 's' : ''}`;
+                              }
+
                               return (
-                                <button
-                                  key={recTask.id}
-                                  onClick={() => {
-                                    if (recTask.id !== task.id) {
-                                      if (onNavigateToTask) {
-                                        onNavigateToTask(recTask.id);
+                                <div key={recTask.id} className="flex flex-col items-center gap-1">
+                                  <button
+                                    onClick={() => {
+                                      if (recTask.id !== task.id) {
+                                        if (onNavigateToTask) {
+                                          onNavigateToTask(recTask.id);
+                                        }
                                       }
-                                    }
-                                  }}
-                                  className="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all hover:shadow-md"
-                                  style={{
-                                    borderWidth: isCurrent ? "2px" : "1px",
-                                    borderColor: pillBorderColor,
-                                    backgroundColor: isCurrent ? "var(--blue-light)" : "white",
-                                    minWidth: "80px",
-                                    cursor: recTask.id !== task.id ? "pointer" : "default",
-                                  }}
-                                  title={`${recTask.quarter || format(new Date(recTask.plannedDate || recTask.dueDate || ""), "MMM")} - ${recTask.status.replace("_", " ")}`}
-                                >
-                                  <div
-                                    className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold transition-transform hover:scale-110"
-                                    style={{
-                                      backgroundColor: pillColor,
-                                      color: textColor,
-                                      border: `2px solid ${pillBorderColor}`,
                                     }}
+                                    className="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all hover:shadow-md"
+                                    style={{
+                                      borderWidth: isCurrent ? "2px" : "1px",
+                                      borderColor: pillBorderColor,
+                                      backgroundColor: isCurrent ? "var(--blue-light)" : "white",
+                                      minWidth: "80px",
+                                      cursor: recTask.id !== task.id ? "pointer" : "default",
+                                    }}
+                                    title={summaryText}
                                   >
-                                    {isCompleted ? "✓" : recTask.recurrenceIndex}
+                                    <div
+                                      className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold transition-transform hover:scale-110"
+                                      style={{
+                                        backgroundColor: pillColor,
+                                        color: textColor,
+                                        border: `2px solid ${pillBorderColor}`,
+                                      }}
+                                    >
+                                      {isCompleted ? "✓" : recTask.recurrenceIndex}
+                                    </div>
+                                    <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                                      {recTask.quarter || format(new Date(recTask.plannedDate || recTask.dueDate || ""), "MMM")}
+                                    </span>
+                                    {evidenceCount > 0 && (
+                                      <span className="text-xs" style={{ color: "var(--text-faint)" }}>
+                                        {evidenceCount} {evidenceCount === 1 ? 'file' : 'files'}
+                                      </span>
+                                    )}
+                                  </button>
+                                  {/* Compact summary below pill */}
+                                  <div className="text-center" style={{ maxWidth: "80px" }}>
+                                    <p className="text-xs leading-tight" style={{ color: "var(--text-muted)" }}>
+                                      {isCompleted && recTask.completedAt ? (
+                                        <>Completed {format(new Date(recTask.completedAt), "MMM d")}</>
+                                      ) : isInProgress ? (
+                                        "In progress"
+                                      ) : isPendingReview ? (
+                                        "Pending review"
+                                      ) : isPlanned && recTask.plannedDate ? (
+                                        <>Planned {format(new Date(recTask.plannedDate), "MMM d")}</>
+                                      ) : (
+                                        recTask.status.replace("_", " ")
+                                      )}
+                                    </p>
                                   </div>
-                                  <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-                                    {recTask.quarter || format(new Date(recTask.plannedDate || recTask.dueDate || ""), "MMM")}
-                                  </span>
-                                </button>
+                                </div>
                               );
                             })}
                         </div>

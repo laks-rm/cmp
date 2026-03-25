@@ -125,6 +125,7 @@ export async function GET(req: NextRequest) {
       responsibleTeam: { select: { id: true, name: true } },
       pic: { select: { id: true, name: true, initials: true, avatarColor: true } },
       reviewer: { select: { id: true, name: true, initials: true, avatarColor: true } },
+      _count: params.recurrenceGroupId ? { select: { evidence: true } } : undefined,
     };
 
     // Default Task Tracker view (no sourceId): show actionable queue only — all overdue open,
