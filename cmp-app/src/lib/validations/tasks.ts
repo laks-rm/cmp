@@ -13,7 +13,7 @@ export const taskQuerySchema = z.object({
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]).optional(),
   search: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(25),
+  limit: z.coerce.number().int().positive().max(10000).default(25),
   sortBy: z.enum(["name", "dueDate", "status", "riskRating", "createdAt"]).default("dueDate"),
   sortOrder: z.enum(["asc", "desc"]).default("asc"),
   recurrenceGroupId: z.string().uuid().optional().or(z.literal("")),
