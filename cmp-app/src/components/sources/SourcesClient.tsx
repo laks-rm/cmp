@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, CheckSquare, AlertTriangle, TrendingUp, FileText, SlidersHorizontal, ChevronDown, ChevronUp, X, Search } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { Plus, FileText, SlidersHorizontal, ChevronDown, ChevronUp, X, Search, Trash2 } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { SourceWizard } from "@/components/sources/SourceWizard";
 import toast from "@/lib/toast";
@@ -55,12 +56,17 @@ const SOURCE_TYPE_COLORS = {
 
 export function SourcesClient() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [selectedSourceForTasks, setSelectedSourceForTasks] = useState<Source | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [sourceToDelete, setSourceToDelete] = useState<Source | null>(null);
+  const [deleteConfirmCode, setDeleteConfirmCode] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
   const [filters, setFilters] = useState({
     sourceType: "",
     entityCode: "",
@@ -101,6 +107,56 @@ export function SourcesClient() {
     setSelectedSourceForTasks(null);
     fetchSources();
   };
+
+  const handleDeleteClick = (source: Source) => {
+    setSourceToDelete(source);
+    setDeleteConfirmCode("");
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!sourceToDelete || deleteConfirmCode !== sourceToDelete.code) {
+      toast.error("Source code does not match");
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/sources/${sourceToDelete.id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        let errorMessage = "Failed to delete source";
+        try {
+          const data = await res.json();
+          errorMessage = data.error || errorMessage;
+        } catch {
+          errorMessage = `Failed to delete source (${res.status})`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      setSources(sources.filter(s => s.id !== sourceToDelete.id));
+      toast.success("Source deleted successfully");
+      setDeleteConfirmOpen(false);
+      setSourceToDelete(null);
+      setDeleteConfirmCode("");
+    } catch (error) {
+      console.error("Error deleting source:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to delete source");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirmOpen(false);
+    setSourceToDelete(null);
+    setDeleteConfirmCode("");
+  };
+
+  const isSuperAdmin = session?.user?.roleName === "SUPER_ADMIN";
 
   const typeConfig = (type: string) => SOURCE_TYPE_COLORS[type as keyof typeof SOURCE_TYPE_COLORS] || SOURCE_TYPE_COLORS.REGULATION;
 
@@ -356,123 +412,174 @@ export function SourcesClient() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {filteredSources.map((source) => {
-            const typeStyle = typeConfig(source.sourceType);
-            const isLowCompletion = source.stats.completionPercentage < 50;
+        <div className="rounded-[14px] border bg-white overflow-hidden" style={{ borderColor: "var(--border)" }}>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr style={{ backgroundColor: "var(--bg-subtle)", borderBottom: "1px solid var(--border)" }}>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                    Source
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                    Type
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                    Entities
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                    Issuing Authority
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                    Team
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                    Tasks
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                    Progress
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSources.map((source) => {
+                  const typeStyle = typeConfig(source.sourceType);
+                  const isLowCompletion = source.stats.completionPercentage < 50;
+                  const progressColor = isLowCompletion ? "var(--amber)" : "var(--green)";
 
-            return (
-              <div
-                key={source.id}
-                className="group rounded-[14px] border bg-white p-6 shadow-sm transition-all hover:shadow-md"
-                style={{ borderColor: "var(--border)" }}
-              >
-                {/* Header */}
-                <div className="mb-4 flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="mb-2 flex items-center gap-2">
-                      <span
-                        className="rounded-md px-2 py-1 text-xs font-medium"
-                        style={{
-                          backgroundColor: typeStyle.bg,
-                          color: typeStyle.color,
-                        }}
-                      >
-                        {typeStyle.label}
-                      </span>
-                      {source.entities.map((se) => (
-                        <EntityBadge key={se.entity.id} entityCode={se.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} />
-                      ))}
-                    </div>
-                    <h3 className="text-lg font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>
-                      {source.name}
-                    </h3>
-                    <p className="mt-1 text-sm font-mono" style={{ color: "var(--text-muted)" }}>
-                      {source.code}
-                    </p>
-                    {source.issuingAuthority && (
-                      <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-                        {source.issuingAuthority.abbreviation 
-                          ? `${source.issuingAuthority.abbreviation} — ${source.issuingAuthority.name}`
-                          : source.issuingAuthority.name}
-                      </p>
-                    )}
-                  </div>
-                </div>
+                  return (
+                    <tr
+                      key={source.id}
+                      className="transition-colors"
+                      style={{ borderBottom: "1px solid var(--border-light)" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-hover)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                    >
+                      {/* Source Name & Code */}
+                      <td className="px-4 py-4">
+                        <div>
+                          <div className="font-semibold" style={{ color: "var(--text-primary)" }}>
+                            {source.name}
+                          </div>
+                          <div className="text-xs font-mono mt-0.5" style={{ color: "var(--text-muted)" }}>
+                            {source.code}
+                          </div>
+                        </div>
+                      </td>
 
-                {/* Stats Grid */}
-                <div className="mb-4 grid grid-cols-3 gap-3">
-                  <div className="rounded-lg p-3" style={{ backgroundColor: "var(--bg-subtle)" }}>
-                    <div className="flex items-center gap-2">
-                      <CheckSquare size={16} style={{ color: "var(--blue)" }} />
-                      <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                        Tasks
-                      </span>
-                    </div>
-                    <p className="mt-1 text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-                      {source.stats.completedTasks}/{source.stats.totalTasks}
-                    </p>
-                  </div>
-                  <div className="rounded-lg p-3" style={{ backgroundColor: "var(--bg-subtle)" }}>
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle size={16} style={{ color: "var(--amber)" }} />
-                      <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                        Findings
-                      </span>
-                    </div>
-                    <p className="mt-1 text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-                      {source.stats.totalFindings}
-                    </p>
-                  </div>
-                  <div className="rounded-lg p-3" style={{ backgroundColor: "var(--bg-subtle)" }}>
-                    <div className="flex items-center gap-2">
-                      <TrendingUp size={16} style={{ color: isLowCompletion ? "var(--red)" : "var(--green)" }} />
-                      <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                        Progress
-                      </span>
-                    </div>
-                    <p className="mt-1 text-lg font-bold" style={{ color: isLowCompletion ? "var(--red)" : "var(--green)" }}>
-                      {source.stats.completionPercentage}%
-                    </p>
-                  </div>
-                </div>
+                      {/* Source Type */}
+                      <td className="px-4 py-4">
+                        <span
+                          className="inline-block rounded-md px-2 py-1 text-xs font-medium whitespace-nowrap"
+                          style={{
+                            backgroundColor: typeStyle.bg,
+                            color: typeStyle.color,
+                          }}
+                        >
+                          {typeStyle.label}
+                        </span>
+                      </td>
 
-                {/* Progress Bar */}
-                <div className="mb-4 h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: "var(--bg-muted)" }}>
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${source.stats.completionPercentage}%`,
-                      backgroundColor: isLowCompletion ? "var(--amber)" : "var(--green)",
-                    }}
-                  />
-                </div>
+                      {/* Entities */}
+                      <td className="px-4 py-4">
+                        <div className="flex flex-wrap gap-1">
+                          {source.entities.map((se) => (
+                            <EntityBadge key={se.entity.id} entityCode={se.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} />
+                          ))}
+                        </div>
+                      </td>
 
-                {/* Actions */}
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleViewTasks(source)}
-                    className="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
-                    style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-                  >
-                    View Tasks
-                  </button>
-                  <button
-                    onClick={() => handleAddTasks(source)}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white transition-opacity"
-                    style={{ backgroundColor: "var(--blue)" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                  >
-                    <Plus size={16} />
-                    Add Tasks
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+                      {/* Issuing Authority */}
+                      <td className="px-4 py-4">
+                        <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                          {source.issuingAuthority
+                            ? source.issuingAuthority.abbreviation || source.issuingAuthority.name
+                            : "—"}
+                        </span>
+                      </td>
+
+                      {/* Team */}
+                      <td className="px-4 py-4">
+                        <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                          {source.team.name}
+                        </span>
+                      </td>
+
+                      {/* Tasks */}
+                      <td className="px-4 py-4">
+                        <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                          {source.stats.completedTasks}/{source.stats.totalTasks}
+                        </span>
+                      </td>
+
+                      {/* Progress */}
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold min-w-[3ch]" style={{ color: progressColor }}>
+                            {source.stats.completionPercentage}%
+                          </span>
+                          <div className="h-2 w-20 overflow-hidden rounded-full" style={{ backgroundColor: "var(--bg-muted)" }}>
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${source.stats.completionPercentage}%`,
+                                backgroundColor: progressColor,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleViewTasks(source)}
+                            className="rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+                            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
+                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                          >
+                            View Tasks
+                          </button>
+                          <button
+                            onClick={() => handleAddTasks(source)}
+                            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-opacity"
+                            style={{ backgroundColor: "var(--blue)" }}
+                            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+                            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+                          >
+                            <Plus size={14} />
+                            Add Tasks
+                          </button>
+                          {isSuperAdmin && (
+                            <button
+                              onClick={() => handleDeleteClick(source)}
+                              className="rounded-lg border px-2 py-1.5 transition-colors"
+                              style={{ borderColor: "var(--border)", color: "var(--red)" }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = "var(--red-light)";
+                                e.currentTarget.style.borderColor = "var(--red)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = "transparent";
+                                e.currentTarget.style.borderColor = "var(--border)";
+                              }}
+                              title="Delete Source"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -482,6 +589,63 @@ export function SourcesClient() {
           onClose={handleWizardClose}
           existingSource={selectedSourceForTasks || undefined}
         />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirmOpen && sourceToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md rounded-[14px] bg-white p-6 shadow-lg" style={{ borderColor: "var(--border)" }}>
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+                Delete Source
+              </h3>
+              <p className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+                Are you sure you want to delete <span className="font-semibold">{sourceToDelete.name}</span>?
+              </p>
+              <p className="mt-2 text-sm" style={{ color: "var(--red)" }}>
+                This will permanently delete the source and all its items, tasks, findings, and evidence. This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                Type <span className="font-mono font-semibold">{sourceToDelete.code}</span> to confirm:
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmCode}
+                onChange={(e) => setDeleteConfirmCode(e.target.value)}
+                className="w-full rounded-lg border px-3 py-2 text-sm font-mono outline-none transition-colors focus:border-[var(--blue)] focus:ring-2 focus:ring-[var(--blue-light)]"
+                style={{ borderColor: "var(--border)" }}
+                placeholder={sourceToDelete.code}
+                autoFocus
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleDeleteCancel}
+                disabled={isDeleting}
+                className="flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+                style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                onMouseEnter={(e) => !isDeleting && (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={isDeleting || deleteConfirmCode !== sourceToDelete.code}
+                className="flex-1 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
+                style={{ backgroundColor: "var(--red)" }}
+                onMouseEnter={(e) => !isDeleting && deleteConfirmCode === sourceToDelete.code && (e.currentTarget.style.opacity = "0.9")}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+              >
+                {isDeleting ? "Deleting..." : "Delete Source"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

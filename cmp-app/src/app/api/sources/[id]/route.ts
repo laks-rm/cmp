@@ -48,6 +48,20 @@ export async function GET(req: NextRequest, context: { params: { id: string } })
                     avatarColor: true,
                   },
                 },
+                reviewer: {
+                  select: {
+                    id: true,
+                    name: true,
+                    initials: true,
+                    avatarColor: true,
+                  },
+                },
+                responsibleTeam: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
               },
             },
             parent: true,
@@ -163,5 +177,77 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
     }
     console.error("Source update error:", error);
     return NextResponse.json({ error: "Failed to update source" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest, context: { params: { id: string } }) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    await requirePermission(session, "SOURCES", "DELETE");
+
+    const sourceId = context.params.id;
+
+    const existingSource = await prisma.source.findUnique({
+      where: { id: sourceId },
+      include: {
+        entities: {
+          include: {
+            entity: true,
+          },
+        },
+        team: true,
+        items: {
+          include: {
+            tasks: true,
+          },
+        },
+      },
+    });
+
+    if (!existingSource) {
+      return NextResponse.json({ error: "Source not found" }, { status: 404 });
+    }
+
+    const sourceEntityIds = existingSource.entities.map((e) => e.entityId);
+    const hasAccess = sourceEntityIds.some((id) => session.user.entityIds.includes(id));
+    if (!hasAccess) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    const taskCount = existingSource.items.reduce((sum, item) => sum + item.tasks.length, 0);
+    const itemCount = existingSource.items.length;
+
+    await logAuditEvent({
+      action: "SOURCE_DELETED",
+      module: "SOURCES",
+      userId: session.user.userId,
+      targetType: "Source",
+      targetId: sourceId,
+      details: {
+        sourceName: existingSource.name,
+        sourceCode: existingSource.code,
+        sourceType: existingSource.sourceType,
+        teamId: existingSource.teamId,
+        entityIds: sourceEntityIds,
+        taskCount,
+        itemCount,
+      },
+    });
+
+    await prisma.source.delete({
+      where: { id: sourceId },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    console.error("Source delete error:", error);
+    return NextResponse.json({ error: "Failed to delete source" }, { status: 500 });
   }
 }
