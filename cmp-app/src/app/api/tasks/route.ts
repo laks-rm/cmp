@@ -24,12 +24,17 @@ export async function GET(req: NextRequest) {
     const searchParams = Object.fromEntries(req.nextUrl.searchParams.entries());
     const params = taskQuerySchema.parse(searchParams);
 
+    console.log("[API /api/tasks] Request from user:", session.user.email);
+    console.log("[API /api/tasks] User entityIds:", session.user.entityIds);
+    console.log("[API /api/tasks] Params:", params);
+
     const where: Prisma.TaskWhereInput = {
       AND: [getEntityFilter(session)],
     };
 
     if (params.entityId) {
       where.entityId = params.entityId;
+      console.log("[API /api/tasks] Filtering by entityId:", params.entityId);
     }
 
     if (params.teamId && params.teamId !== "ALL") {
@@ -203,6 +208,8 @@ export async function GET(req: NextRequest) {
       tasks = taskList;
       total = count;
     }
+
+    console.log("[API /api/tasks] Returning:", { taskCount: tasks.length, total, page: params.page });
 
     return NextResponse.json({
       tasks,
