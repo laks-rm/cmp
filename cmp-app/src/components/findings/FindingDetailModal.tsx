@@ -1,9 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { format } from "date-fns";
-import { X, FileText, Send } from "lucide-react";
+import { X, FileText, Send, Upload, Trash2, ExternalLink, Download } from "lucide-react";
 import toast from "@/lib/toast";
+
+type User = {
+  id: string;
+  name: string;
+  initials: string;
+  avatarColor: string | null;
+};
+
+type Evidence = {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  fileUrl: string;
+  mimeType: string;
+  uploadedBy: User;
+  createdAt: string;
+};
 
 type FindingDetailModalProps = {
   isOpen: boolean;
@@ -14,14 +31,19 @@ type FindingDetailModalProps = {
 
 export function FindingDetailModal({ isOpen, findingId, onClose, onFindingUpdated }: FindingDetailModalProps) {
   const [finding, setFinding] = useState<Record<string, unknown> | null>(null);
+  const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [activeTab, setActiveTab] = useState<"details" | "evidence" | "comments" | "history">("details");
   const [newComment, setNewComment] = useState("");
   const [closureNote, setClosureNote] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen && findingId) {
       fetchFinding();
+      fetchEvidence();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, findingId]);
@@ -39,6 +61,18 @@ export function FindingDetailModal({ isOpen, findingId, onClose, onFindingUpdate
       toast.error("Failed to load finding");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchEvidence = async () => {
+    try {
+      const res = await fetch(`/api/evidence?findingId=${findingId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setEvidence(data);
+      }
+    } catch (error) {
+      console.error("Error fetching evidence:", error);
     }
   };
 
@@ -82,6 +116,91 @@ export function FindingDetailModal({ isOpen, findingId, onClose, onFindingUpdate
     }
   };
 
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("File size must be less than 10MB");
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("findingId", findingId);
+
+      const res = await fetch("/api/evidence", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Upload failed");
+      }
+
+      const newEvidence = await res.json();
+      setEvidence((prev) => [...prev, newEvidence]);
+      toast.success("Evidence uploaded");
+      if (onFindingUpdated) onFindingUpdated();
+    } catch (error) {
+      console.error("Upload error:", error);
+      const message = error instanceof Error ? error.message : "Failed to upload evidence";
+      toast.error(message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteEvidence = async (evidenceId: string) => {
+    if (!confirm("Delete this evidence file?")) return;
+
+    try {
+      const res = await fetch(`/api/evidence?id=${evidenceId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) throw new Error("Delete failed");
+
+      setEvidence((prev) => prev.filter((e) => e.id !== evidenceId));
+      toast.success("Evidence deleted");
+      if (onFindingUpdated) onFindingUpdated();
+    } catch (error) {
+      console.error("Delete error:", error);
+      toast.error("Failed to delete evidence");
+    }
+  };
+
+  const handleDownloadEvidence = (evidenceId: string, fileName: string) => {
+    const link = document.createElement("a");
+    link.href = `/api/files/${evidenceId}`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleOpenEvidence = (evidenceId: string) => {
+    window.open(`/api/files/${evidenceId}`, "_blank");
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFileUpload(e.dataTransfer.files);
+  };
+
   if (!isOpen) return null;
 
   const SEVERITY_COLORS: Record<string, { bg: string; color: string }> = {
@@ -93,6 +212,10 @@ export function FindingDetailModal({ isOpen, findingId, onClose, onFindingUpdate
   };
 
   const STATUS_OPTIONS = ["OPEN", "IN_PROGRESS", "IMPLEMENTED", "VERIFIED", "CLOSED"];
+  
+  const findingStatus = String(finding?.status || "");
+  const isClosedStatus = findingStatus === "CLOSED" || findingStatus === "VERIFIED";
+  const canUploadEvidence = !isClosedStatus;
 
   return (
     <div
@@ -277,26 +400,125 @@ export function FindingDetailModal({ isOpen, findingId, onClose, onFindingUpdate
 
               {activeTab === "evidence" && (
                 <div className="space-y-4">
-                  <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                    Upload remediation evidence
-                  </p>
-                  {Array.isArray(finding.evidence) && finding.evidence.length > 0 ? (
+                  {/* Upload zone */}
+                  {canUploadEvidence ? (
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors"
+                      style={{
+                        borderColor: isDragging ? "var(--blue)" : "var(--border)",
+                        backgroundColor: isDragging ? "var(--blue-light)" : "var(--bg-subtle)",
+                      }}
+                    >
+                      <Upload size={32} className="mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
+                      <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                        {uploading ? "Uploading..." : "Drop files here or click to browse"}
+                      </p>
+                      <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                        Max 10MB per file
+                      </p>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => handleFileUpload(e.target.files)}
+                        disabled={uploading}
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border-2 border-dashed p-8 text-center" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
+                      <Upload size={32} className="mx-auto mb-3" style={{ color: "var(--text-faint)" }} />
+                      <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
+                        Finding is closed — evidence upload disabled
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Evidence list */}
+                  {evidence.length > 0 ? (
                     <div className="space-y-2">
-                      {(finding.evidence as Array<Record<string, unknown>>).map((e) => (
-                        <div key={String(e.id)} className="flex items-center justify-between rounded-lg border p-3" style={{ borderColor: "var(--border)" }}>
-                          <div className="flex items-center gap-3">
-                            <FileText size={20} style={{ color: "var(--blue)" }} />
-                            <div>
-                              <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                                {String(e.fileName)}
-                              </p>
-                              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                                {((Number(e.fileSize) || 0) / 1024).toFixed(1)} KB
-                              </p>
+                      {evidence.map((e) => {
+                        const isViewable = ["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp"].includes(e.mimeType);
+                        
+                        return (
+                          <div
+                            key={e.id}
+                            className="flex items-center justify-between rounded-lg border p-3"
+                            style={{ borderColor: "var(--border)", backgroundColor: "white" }}
+                          >
+                            <div className="flex items-center gap-3 flex-1">
+                              <FileText size={20} style={{ color: "var(--blue)" }} />
+                              <div className="flex-1">
+                                <button
+                                  onClick={() => handleOpenEvidence(e.id)}
+                                  className="text-sm font-medium hover:underline text-left"
+                                  style={{ color: "var(--blue)" }}
+                                >
+                                  {e.fileName}
+                                </button>
+                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                                  {(e.fileSize / 1024).toFixed(1)} KB · Uploaded by {e.uploadedBy?.name ?? "Unknown"} · {format(new Date(e.createdAt), "MMM d, h:mm a")}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isViewable && (
+                                <button
+                                  onClick={() => handleOpenEvidence(e.id)}
+                                  className="rounded-md p-1.5 transition-colors"
+                                  style={{ color: "var(--text-muted)" }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = "var(--blue-light)";
+                                    e.currentTarget.style.color = "var(--blue)";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = "transparent";
+                                    e.currentTarget.style.color = "var(--text-muted)";
+                                  }}
+                                  title="Open in new tab"
+                                >
+                                  <ExternalLink size={16} />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDownloadEvidence(e.id, e.fileName)}
+                                className="rounded-md p-1.5 transition-colors"
+                                style={{ color: "var(--text-muted)" }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "var(--green-light)";
+                                  e.currentTarget.style.color = "var(--green)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = "transparent";
+                                  e.currentTarget.style.color = "var(--text-muted)";
+                                }}
+                                title="Download"
+                              >
+                                <Download size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteEvidence(e.id)}
+                                className="rounded-md p-1.5 transition-colors"
+                                style={{ color: "var(--text-muted)" }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "var(--red-light)";
+                                  e.currentTarget.style.color = "var(--red)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = "transparent";
+                                  e.currentTarget.style.color = "var(--text-muted)";
+                                }}
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="text-center text-sm" style={{ color: "var(--text-muted)" }}>
