@@ -296,3 +296,162 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest, context: { params: { id: string } }) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    await requirePermission(session, "TASK_EXECUTION", "DELETE");
+
+    const taskId = context.params.id;
+    const { searchParams } = new URL(req.url);
+    const scope = searchParams.get("scope");
+    const preview = searchParams.get("preview") === "true";
+
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        evidence: true,
+      },
+    });
+
+    if (!task) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
+
+    if (!session.user.entityIds.includes(task.entityId)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    // Handle recurrence group deletion
+    if (scope === "recurrence" && task.recurrenceGroupId) {
+      const siblings = await prisma.task.findMany({
+        where: { recurrenceGroupId: task.recurrenceGroupId },
+        include: {
+          evidence: true,
+        },
+      });
+
+      // Categorize instances as preserved or deletable
+      const preserved = siblings.filter(
+        (t) =>
+          t.status === "COMPLETED" ||
+          t.status === "IN_PROGRESS" ||
+          t.evidence.length > 0 ||
+          t.narrative
+      );
+
+      const deletable = siblings.filter(
+        (t) =>
+          (t.status === "PLANNED" || t.status === "TO_DO") &&
+          t.evidence.length === 0 &&
+          !t.narrative
+      );
+
+      // Preview mode: return analysis without deleting
+      if (preview) {
+        return NextResponse.json({
+          taskId,
+          taskName: task.name,
+          recurrenceGroupId: task.recurrenceGroupId,
+          preservedCount: preserved.length,
+          deletableCount: deletable.length,
+          preservedInstances: preserved.map((t) => ({
+            id: t.id,
+            quarter: t.quarter,
+            status: t.status,
+          })),
+          deletableInstances: deletable.map((t) => ({
+            id: t.id,
+            quarter: t.quarter,
+            status: t.status,
+          })),
+        });
+      }
+
+      // Execute deletion
+      const deletedIds = deletable.map((t) => t.id);
+      await prisma.task.deleteMany({
+        where: {
+          id: { in: deletedIds },
+        },
+      });
+
+      await logAuditEvent({
+        action: "TASK_RECURRENCE_DELETED",
+        module: "TASKS",
+        userId: session.user.userId,
+        entityId: task.entityId,
+        targetType: "Task",
+        targetId: taskId,
+        details: {
+          recurrenceGroupId: task.recurrenceGroupId,
+          deletedCount: deletedIds.length,
+          preservedCount: preserved.length,
+          deletedIds,
+          preservedIds: preserved.map((t) => t.id),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `Deleted ${deletedIds.length} instance${deletedIds.length > 1 ? "s" : ""}. ${preserved.length} instance${preserved.length > 1 ? "s" : ""} preserved with existing work.`,
+        deletedCount: deletedIds.length,
+        preservedCount: preserved.length,
+      });
+    }
+
+    // Handle single task deletion (no recurrence or one-time task)
+    if (preview) {
+      const hasWork = task.evidence.length > 0 || task.narrative || task.status === "COMPLETED" || task.status === "IN_PROGRESS";
+      return NextResponse.json({
+        taskId,
+        taskName: task.name,
+        recurrenceGroupId: null,
+        preservedCount: 0,
+        deletableCount: 1,
+        preservedInstances: [],
+        deletableInstances: [
+          {
+            id: task.id,
+            quarter: task.quarter,
+            status: task.status,
+          },
+        ],
+        hasWork,
+      });
+    }
+
+    // Delete the single task
+    await prisma.task.delete({
+      where: { id: taskId },
+    });
+
+    await logAuditEvent({
+      action: "TASK_DELETED",
+      module: "TASKS",
+      userId: session.user.userId,
+      entityId: task.entityId,
+      targetType: "Task",
+      targetId: taskId,
+      details: {
+        taskName: task.name,
+        status: task.status,
+        frequency: task.frequency,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Task deleted successfully",
+      deletedCount: 1,
+      preservedCount: 0,
+    });
+  } catch (error) {
+    console.error("DELETE /api/tasks/[id] error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

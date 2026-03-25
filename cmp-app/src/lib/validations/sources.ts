@@ -29,7 +29,7 @@ export const createSourceItemSchema = z.object({
   reference: z.string().min(1).max(100).trim(),
   title: z.string().min(1).max(255).trim(),
   description: z.string().max(2000).trim().optional(),
-  parentId: z.string().uuid().optional().or(z.literal("")),
+  parentId: z.string().uuid().optional().or(z.literal("").transform(() => undefined)),
   sortOrder: z.number().int().default(0),
 });
 
@@ -41,7 +41,7 @@ export const createTaskForSourceSchema = z.object({
   expectedOutcome: z.string().max(2000).trim().optional(),
   entityId: z.string().uuid(),
   frequency: z.enum(["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL", "BIENNIAL", "ONE_TIME"]),
-  quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]).optional(),
+  quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]).optional().or(z.literal("").transform(() => undefined)),
   riskRating: z.enum(["HIGH", "MEDIUM", "LOW"]),
   assigneeId: z.string().uuid().optional().or(z.literal("")),
   responsibleTeamId: z.string().uuid().optional().or(z.literal("")),

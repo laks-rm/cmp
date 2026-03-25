@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Plus, FileText, SlidersHorizontal, ChevronDown, ChevronUp, X, Search, Trash2 } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
-import { SourceWizard } from "@/components/sources/SourceWizard";
 import toast from "@/lib/toast";
 
 type Source = {
@@ -59,8 +58,6 @@ export function SourcesClient() {
   const { data: session } = useSession();
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [selectedSourceForTasks, setSelectedSourceForTasks] = useState<Source | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -94,18 +91,7 @@ export function SourcesClient() {
   };
 
   const handleViewTasks = (source: Source) => {
-    router.push(`/tasks?sourceId=${source.id}`);
-  };
-
-  const handleAddTasks = (source: Source) => {
-    setSelectedSourceForTasks(source);
-    setWizardOpen(true);
-  };
-
-  const handleWizardClose = () => {
-    setWizardOpen(false);
-    setSelectedSourceForTasks(null);
-    fetchSources();
+    router.push(`/sources/${source.id}`);
   };
 
   const handleDeleteClick = (source: Source) => {
@@ -225,7 +211,7 @@ export function SourcesClient() {
           </p>
         </div>
         <button
-          onClick={() => setWizardOpen(true)}
+          onClick={() => router.push("/sources/new")}
           className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity"
           style={{ backgroundColor: "var(--blue)" }}
           onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
@@ -382,7 +368,7 @@ export function SourcesClient() {
             Create your first compliance source to get started
           </p>
           <button
-            onClick={() => setWizardOpen(true)}
+            onClick={() => router.push("/sources/new")}
             className="mt-4 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"
             style={{ backgroundColor: "var(--blue)" }}
           >
@@ -452,8 +438,9 @@ export function SourcesClient() {
                   return (
                     <tr
                       key={source.id}
-                      className="transition-colors"
+                      className="cursor-pointer transition-colors"
                       style={{ borderBottom: "1px solid var(--border-light)" }}
+                      onClick={() => router.push(`/sources/${source.id}`)}
                       onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-hover)")}
                       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                     >
@@ -534,7 +521,7 @@ export function SourcesClient() {
 
                       {/* Actions */}
                       <td className="px-4 py-4">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={() => handleViewTasks(source)}
                             className="rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
@@ -542,17 +529,7 @@ export function SourcesClient() {
                             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
                             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                           >
-                            View Tasks
-                          </button>
-                          <button
-                            onClick={() => handleAddTasks(source)}
-                            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-opacity"
-                            style={{ backgroundColor: "var(--blue)" }}
-                            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
-                            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-                          >
-                            <Plus size={14} />
-                            Add Tasks
+                            View Details
                           </button>
                           {isSuperAdmin && (
                             <button
@@ -581,14 +558,6 @@ export function SourcesClient() {
             </table>
           </div>
         </div>
-      )}
-
-      {wizardOpen && (
-        <SourceWizard
-          isOpen={wizardOpen}
-          onClose={handleWizardClose}
-          existingSource={selectedSourceForTasks || undefined}
-        />
       )}
 
       {/* Delete Confirmation Dialog */}

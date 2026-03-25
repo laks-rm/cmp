@@ -176,17 +176,27 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
       const createdTasks = [];
 
       for (const itemData of validatedData.items) {
-        // Create source item
-        const item = await tx.sourceItem.create({
-          data: {
+        // Check if item with this reference already exists
+        let item = await tx.sourceItem.findFirst({
+          where: {
             sourceId,
             reference: itemData.item.reference,
-            title: itemData.item.title,
-            description: itemData.item.description,
-            parentId: itemData.item.parentId,
-            sortOrder: itemData.item.sortOrder || 0,
           },
         });
+
+        // Only create item if it doesn't exist (incremental generation scenario)
+        if (!item) {
+          item = await tx.sourceItem.create({
+            data: {
+              sourceId,
+              reference: itemData.item.reference,
+              title: itemData.item.title,
+              description: itemData.item.description,
+              parentId: itemData.item.parentId,
+              sortOrder: itemData.item.sortOrder || 0,
+            },
+          });
+        }
 
         createdItems.push(item);
 
@@ -238,11 +248,18 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
         }
       }
 
-      // Update source status to ACTIVE
-      await tx.source.update({
+      // Only update source status to ACTIVE if it's currently DRAFT
+      const currentSource = await tx.source.findUnique({
         where: { id: sourceId },
-        data: { status: "ACTIVE" },
+        select: { status: true },
       });
+
+      if (currentSource?.status === "DRAFT") {
+        await tx.source.update({
+          where: { id: sourceId },
+          data: { status: "ACTIVE" },
+        });
+      }
 
       return { createdItems, createdTasks };
     });

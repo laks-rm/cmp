@@ -2,9 +2,9 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { requirePermission } from "@/lib/permissions";
-import { SourceTasksClient } from "@/components/sources/SourceTasksClient";
+import { SourceDetailClient } from "@/components/sources/SourceDetailClient";
 
-export default async function SourceTasksPage({ params }: { params: { id: string } }) {
+export default async function SourceDetailPage({ params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   
   if (!session?.user) {
@@ -14,8 +14,8 @@ export default async function SourceTasksPage({ params }: { params: { id: string
   try {
     await requirePermission(session, "SOURCES", "VIEW");
   } catch {
-    redirect("/");
+    redirect("/sources");
   }
 
-  return <SourceTasksClient sourceId={params.id} />;
+  return <SourceDetailClient sourceId={params.id} />;
 }

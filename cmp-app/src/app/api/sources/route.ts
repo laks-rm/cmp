@@ -114,10 +114,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Access denied to selected entities" }, { status: 403 });
     }
 
+    // Auto-generate unique source code if needed
+    let finalCode = validatedData.code;
+    let attempt = 0;
+    const maxAttempts = 10;
+
+    while (attempt < maxAttempts) {
+      // Check if code exists for this team
+      const existingSource = await prisma.source.findFirst({
+        where: {
+          code: finalCode,
+          teamId: validatedData.teamId,
+        },
+      });
+
+      if (!existingSource) {
+        break; // Code is unique
+      }
+
+      // Code exists, generate a new one with suffix
+      attempt++;
+      const timestamp = Date.now().toString().slice(-6);
+      finalCode = `${validatedData.code}-${timestamp}`;
+    }
+
+    if (attempt >= maxAttempts) {
+      return NextResponse.json({ error: "Could not generate unique source code" }, { status: 500 });
+    }
+
     // Create source
     const source = await prisma.source.create({
       data: {
-        code: validatedData.code,
+        code: finalCode,
         name: validatedData.name,
         sourceType: validatedData.sourceType,
         issuingAuthorityId: validatedData.issuingAuthorityId || null,
@@ -153,6 +181,7 @@ export async function POST(req: NextRequest) {
         sourceName: source.name,
         sourceType: source.sourceType,
         entityIds: validatedData.entityIds,
+        codeModified: finalCode !== validatedData.code,
       },
     });
 

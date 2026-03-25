@@ -11,6 +11,7 @@ const updateItemSchema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   isInformational: z.boolean().optional(),
+  metadata: z.any().optional(),
 });
 
 export async function PATCH(
@@ -95,6 +96,7 @@ export async function PATCH(
     if (data.description !== undefined) updates.description = data.description;
     if (data.isInformational !== undefined)
       updates.isInformational = data.isInformational;
+    if (data.metadata !== undefined) updates.metadata = data.metadata;
 
     const updatedItem = await prisma.sourceItem.update({
       where: { id: itemId },
