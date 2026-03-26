@@ -1,6 +1,6 @@
 "use client";
 
-import { Play, CheckCircle2, Clock, RotateCcw } from "lucide-react";
+import { Play, CheckCircle2, Clock, RotateCcw, AlertTriangle } from "lucide-react";
 
 type TaskActionBarProps = {
   status: string;
@@ -21,6 +21,8 @@ type TaskActionBarProps = {
   onRecall: () => void;
   completedAt: string | null;
   reviewerName: string | null;
+  onRaiseFinding?: () => void;
+  showRaiseFinding?: boolean;
 };
 
 export function TaskActionBar({
@@ -42,6 +44,8 @@ export function TaskActionBar({
   onRecall,
   completedAt,
   reviewerName,
+  onRaiseFinding,
+  showRaiseFinding = false,
 }: TaskActionBarProps) {
   const isToDo = status === "TO_DO";
   const isInProgress = status === "IN_PROGRESS";
@@ -81,6 +85,18 @@ export function TaskActionBar({
           <Play size={20} />
           Start Task
         </button>
+        {showRaiseFinding && onRaiseFinding && (
+          <button
+            onClick={onRaiseFinding}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+            style={{ borderColor: "var(--border)", color: "var(--text-secondary)", backgroundColor: "white" }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "white")}
+          >
+            <AlertTriangle size={16} />
+            Raise Finding
+          </button>
+        )}
       </div>
     );
   }
@@ -114,6 +130,18 @@ export function TaskActionBar({
                   {helperMessage}
                 </p>
               )}
+              {showRaiseFinding && onRaiseFinding && (
+                <button
+                  onClick={onRaiseFinding}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+                  style={{ borderColor: "var(--border)", color: "var(--text-secondary)", backgroundColor: "white" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-hover)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "white")}
+                >
+                  <AlertTriangle size={16} />
+                  Raise Finding
+                </button>
+              )}
             </>
           ) : (
             <div className="rounded-lg p-3 text-center text-sm" style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-muted)" }}>
@@ -137,6 +165,18 @@ export function TaskActionBar({
               <p className="text-center text-xs" style={{ color: "var(--red)" }}>
                 {helperMessage}
               </p>
+            )}
+            {showRaiseFinding && onRaiseFinding && (
+              <button
+                onClick={onRaiseFinding}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+                style={{ borderColor: "var(--border)", color: "var(--text-secondary)", backgroundColor: "white" }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-hover)")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "white")}
+              >
+                <AlertTriangle size={16} />
+                Raise Finding
+              </button>
             )}
           </>
         )}
@@ -187,6 +227,18 @@ export function TaskActionBar({
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-subtle)")}
           >
             Recall Submission
+          </button>
+        )}
+        {showRaiseFinding && onRaiseFinding && (
+          <button
+            onClick={onRaiseFinding}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+            style={{ borderColor: "var(--border)", color: "var(--text-secondary)", backgroundColor: "white" }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--bg-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "white")}
+          >
+            <AlertTriangle size={16} />
+            Raise Finding
           </button>
         )}
       </div>

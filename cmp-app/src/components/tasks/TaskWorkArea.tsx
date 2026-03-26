@@ -225,7 +225,7 @@ export function TaskWorkArea({
           Evidence Files
         </label>
 
-        {canEdit ? (
+        {canEdit && (
           <div
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -251,13 +251,6 @@ export function TaskWorkArea({
               onChange={(e) => handleFileUpload(e.target.files)}
               disabled={uploading}
             />
-          </div>
-        ) : (
-          <div className="mb-4 rounded-lg border-2 border-dashed p-8 text-center" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
-            <Upload size={32} className="mx-auto mb-3" style={{ color: "var(--text-faint)" }} />
-            <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
-              Evidence upload disabled in current status
-            </p>
           </div>
         )}
 

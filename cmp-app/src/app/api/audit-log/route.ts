@@ -158,7 +158,7 @@ async function enrichAuditEntries(entries: AuditLogWithRelations[]) {
     taskIds.size > 0
       ? prisma.task.findMany({
           where: { id: { in: Array.from(taskIds) } },
-          select: { id: true, title: true },
+          select: { id: true, name: true },
         })
       : [],
     findingIds.size > 0
@@ -176,7 +176,7 @@ async function enrichAuditEntries(entries: AuditLogWithRelations[]) {
   ]);
 
   // Create lookup maps
-  const taskMap = new Map(tasks.map((t) => [t.id, t.title]));
+  const taskMap = new Map(tasks.map((t) => [t.id, t.name]));
   const findingMap = new Map(findings.map((f) => [f.id, `${f.reference} - ${f.title}`]));
   const sourceMap = new Map(sources.map((s) => [s.id, s.name]));
 
@@ -258,7 +258,6 @@ function generateChangeSummary(action: string, details: Prisma.JsonValue): strin
 
   // Due date changes
   if (action === "task_due_date_changed") {
-    const from = detailsObj.from;
     const to = detailsObj.to;
     if (to) {
       return `Due date: ${to}`;

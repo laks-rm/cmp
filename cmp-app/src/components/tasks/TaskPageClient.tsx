@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, Send, AlertTriangle } from "lucide-react";
+import { ChevronRight, Send } from "lucide-react";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { TaskStatusStepper } from "@/components/tasks/TaskStatusStepper";
@@ -469,7 +469,7 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
                       className="text-xs font-medium transition-opacity hover:underline"
                       style={{ color: "var(--blue)" }}
                     >
-                      {showSourceExpanded ? "Hide" : "Show"} full requirement
+                      Show requirement
                     </button>
                     {showSourceExpanded && (
                       <div className="mt-2 rounded-lg p-3 text-sm leading-relaxed" style={{ backgroundColor: "white", color: "var(--text-secondary)", border: "1px solid var(--border-light)" }}>
@@ -703,23 +703,9 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
             onRecall={() => handleTaskAction("recall")}
             completedAt={task.completedAt}
             reviewerName={task.reviewer?.name || null}
+            onRaiseFinding={() => setShowFindingPanel(true)}
+            showRaiseFinding={task.status === "IN_PROGRESS" || task.status === "TO_DO"}
           />
-
-          {/* Raise Finding Button */}
-          {(task.status === "IN_PROGRESS" || task.status === "COMPLETED") && (
-            <div className="pt-2">
-              <button
-                onClick={() => setShowFindingPanel(true)}
-                className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-                style={{ backgroundColor: "var(--amber-light)", color: "var(--amber)" }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "var(--amber)")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "var(--amber-light)")}
-              >
-                <AlertTriangle size={16} />
-                Raise Finding
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Right Column - Sidebar */}
@@ -738,6 +724,7 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
             onReviewerChange={handleReviewerChange}
             onAssignPIC={handleAssignPIC}
             onNavigateToTask={(id) => router.push(`/tasks/${id}`)}
+            onTaskUpdate={fetchTaskData}
           />
         </div>
       </div>

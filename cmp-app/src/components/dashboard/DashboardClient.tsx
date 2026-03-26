@@ -15,7 +15,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Timer,
-  Shield,
   ChevronDown,
   ChevronUp
 } from "lucide-react";

@@ -1,8 +1,9 @@
 "use client";
 
-import { Clock, CheckCircle2, Circle, Paperclip, FileEdit, Eye } from "lucide-react";
+import { Clock, CheckCircle2, Circle, Paperclip, FileEdit, Eye, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { format, isPast } from "date-fns";
 import { useSession } from "next-auth/react";
+import { useState } from "react";
 
 type Task = {
   id: string;
@@ -18,6 +19,10 @@ type Task = {
   recurrenceTotalCount: number | null;
   plannedDate: string | null;
   quarter: string | null;
+  description: string | null;
+  expectedOutcome: string | null;
+  clickupUrl: string | null;
+  gdriveUrl: string | null;
   responsibleTeam: { id: string; name: string } | null;
   pic: { id: string; name: string; initials: string; avatarColor: string | null } | null;
   reviewer: { id: string; name: string; initials: string; avatarColor: string | null } | null;
@@ -66,6 +71,7 @@ type TaskSidebarProps = {
   onReviewerChange: (reviewerId: string) => void;
   onAssignPIC: (userId: string) => void;
   onNavigateToTask: (taskId: string) => void;
+  onTaskUpdate?: () => void;
 };
 
 export function TaskSidebar({
@@ -82,14 +88,54 @@ export function TaskSidebar({
   onReviewerChange,
   onAssignPIC,
   onNavigateToTask,
+  onTaskUpdate,
 }: TaskSidebarProps) {
   const { data: session } = useSession();
+  const [showLinksMetadata, setShowLinksMetadata] = useState(false);
+  const [isEditingLinks, setIsEditingLinks] = useState(false);
+  const [editForm, setEditForm] = useState({
+    clickupUrl: task.clickupUrl || "",
+    gdriveUrl: task.gdriveUrl || "",
+    description: task.description || "",
+    expectedOutcome: task.expectedOutcome || "",
+  });
+  const [isSaving, setIsSaving] = useState(false);
 
   const isOverdue = task.dueDate && !task.completedAt && isPast(new Date(task.dueDate));
   const isToDo = task.status === "TO_DO";
   const isInProgress = task.status === "IN_PROGRESS";
   const evidenceMet = !task.evidenceRequired || evidenceCount > 0;
   const narrativeMet = !task.narrativeRequired || narrativeText.trim().length > 0;
+
+  const canActOnTask = isPIC || isTeamMember || isSuperAdmin;
+  
+  // Count populated fields
+  const populatedFieldsCount = [
+    task.clickupUrl,
+    task.gdriveUrl,
+    task.description,
+    task.expectedOutcome,
+  ].filter(Boolean).length;
+
+  const handleSaveLinks = async () => {
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+
+      if (!res.ok) throw new Error("Failed to update task");
+
+      if (onTaskUpdate) onTaskUpdate();
+      setIsEditingLinks(false);
+    } catch (error) {
+      console.error("Error updating task:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -211,7 +257,7 @@ export function TaskSidebar({
         </div>
       </div>
 
-      {/* Task Metadata */}
+      {/* Task Details (with Recurrence) */}
       <div className="rounded-lg border p-4" style={{ backgroundColor: "white", borderColor: "var(--border)" }}>
         <h4 className="mb-4 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
           Task Details
@@ -434,6 +480,197 @@ export function TaskSidebar({
           </div>
         </div>
       )}
+
+      {/* Links & Metadata - Collapsible */}
+      <div className="rounded-lg border" style={{ backgroundColor: "white", borderColor: "var(--border)" }}>
+        <button
+          onClick={() => setShowLinksMetadata(!showLinksMetadata)}
+          className="w-full flex items-center justify-between p-4 text-left transition-colors hover:bg-[var(--bg-hover)]"
+        >
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+              Links & Metadata
+            </h4>
+            {populatedFieldsCount > 0 && (
+              <span className="text-xs font-medium rounded-full px-2 py-0.5" style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-muted)" }}>
+                {populatedFieldsCount}
+              </span>
+            )}
+          </div>
+          {showLinksMetadata ? <ChevronUp size={16} style={{ color: "var(--text-muted)" }} /> : <ChevronDown size={16} style={{ color: "var(--text-muted)" }} />}
+        </button>
+        
+        {showLinksMetadata && (
+          <div className="border-t px-4 pb-4 pt-3 space-y-3" style={{ borderColor: "var(--border-light)" }}>
+            {!isEditingLinks ? (
+              <>
+                {/* ClickUp URL */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                    ClickUp
+                  </label>
+                  {task.clickupUrl ? (
+                    <a
+                      href={task.clickupUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-sm transition-opacity hover:underline"
+                      style={{ color: "var(--blue)" }}
+                    >
+                      <ExternalLink size={12} />
+                      Open in ClickUp
+                    </a>
+                  ) : (
+                    <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not set</span>
+                  )}
+                </div>
+
+                {/* Google Drive URL */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                    Google Drive
+                  </label>
+                  {task.gdriveUrl ? (
+                    <a
+                      href={task.gdriveUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-sm transition-opacity hover:underline"
+                      style={{ color: "var(--blue)" }}
+                    >
+                      <ExternalLink size={12} />
+                      Open in Drive
+                    </a>
+                  ) : (
+                    <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not set</span>
+                  )}
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                    Description
+                  </label>
+                  {task.description ? (
+                    <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                      {task.description}
+                    </p>
+                  ) : (
+                    <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not set</span>
+                  )}
+                </div>
+
+                {/* Expected Outcome */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                    Expected Outcome
+                  </label>
+                  {task.expectedOutcome ? (
+                    <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                      {task.expectedOutcome}
+                    </p>
+                  ) : (
+                    <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not set</span>
+                  )}
+                </div>
+
+                {canActOnTask && (
+                  <button
+                    onClick={() => {
+                      setEditForm({
+                        clickupUrl: task.clickupUrl || "",
+                        gdriveUrl: task.gdriveUrl || "",
+                        description: task.description || "",
+                        expectedOutcome: task.expectedOutcome || "",
+                      });
+                      setIsEditingLinks(true);
+                    }}
+                    className="text-xs font-medium transition-opacity hover:underline"
+                    style={{ color: "var(--blue)" }}
+                  >
+                    Edit
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                      ClickUp URL
+                    </label>
+                    <input
+                      type="url"
+                      value={editForm.clickupUrl}
+                      onChange={(e) => setEditForm({ ...editForm, clickupUrl: e.target.value })}
+                      placeholder="https://app.clickup.com/..."
+                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                      style={{ borderColor: "var(--border)", backgroundColor: "white" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                      Google Drive URL
+                    </label>
+                    <input
+                      type="url"
+                      value={editForm.gdriveUrl}
+                      onChange={(e) => setEditForm({ ...editForm, gdriveUrl: e.target.value })}
+                      placeholder="https://drive.google.com/..."
+                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                      style={{ borderColor: "var(--border)", backgroundColor: "white" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                      Description
+                    </label>
+                    <textarea
+                      value={editForm.description}
+                      onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                      placeholder="Task description..."
+                      rows={3}
+                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                      style={{ borderColor: "var(--border)", backgroundColor: "white" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                      Expected Outcome
+                    </label>
+                    <textarea
+                      value={editForm.expectedOutcome}
+                      onChange={(e) => setEditForm({ ...editForm, expectedOutcome: e.target.value })}
+                      placeholder="Expected outcome..."
+                      rows={3}
+                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                      style={{ borderColor: "var(--border)", backgroundColor: "white" }}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveLinks}
+                    disabled={isSaving}
+                    className="rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-opacity disabled:opacity-50"
+                    style={{ backgroundColor: "var(--blue)" }}
+                  >
+                    {isSaving ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    onClick={() => setIsEditingLinks(false)}
+                    disabled={isSaving}
+                    className="rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+                    style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
