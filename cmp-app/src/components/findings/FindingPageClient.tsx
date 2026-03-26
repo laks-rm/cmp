@@ -241,17 +241,38 @@ export function FindingPageClient({ findingId }: FindingPageClientProps) {
     }
   };
 
-  const handleDownloadEvidence = (evidenceId: string, fileName: string) => {
-    const link = document.createElement("a");
-    link.href = `/api/files/${evidenceId}`;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownloadEvidence = async (evidenceId: string, fileName: string) => {
+    try {
+      const response = await fetch(`/api/evidence/${evidenceId}/download`);
+      if (!response.ok) {
+        throw new Error("Failed to get download URL");
+      }
+      const data = await response.json();
+      
+      const link = document.createElement("a");
+      link.href = data.url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Download error:", error);
+      toast.error("Failed to download evidence");
+    }
   };
 
-  const handleOpenEvidence = (evidenceId: string) => {
-    window.open(`/api/files/${evidenceId}`, "_blank");
+  const handleOpenEvidence = async (evidenceId: string) => {
+    try {
+      const response = await fetch(`/api/evidence/${evidenceId}/download`);
+      if (!response.ok) {
+        throw new Error("Failed to get download URL");
+      }
+      const data = await response.json();
+      window.open(data.url, "_blank");
+    } catch (error) {
+      console.error("Open evidence error:", error);
+      toast.error("Failed to open evidence");
+    }
   };
 
   const handleAddComment = async () => {
