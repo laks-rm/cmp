@@ -6,6 +6,22 @@ import { requirePermission } from "@/lib/permissions";
 import { ApiError } from "@/lib/errors";
 import { Prisma } from "@prisma/client";
 
+type AuditLogWithRelations = {
+  id: string;
+  action: string;
+  module: string;
+  userId: string;
+  targetType: string | null;
+  targetId: string | null;
+  details: Prisma.JsonValue;
+  ipAddress: string | null;
+  createdAt: Date;
+  user: {
+    name: string;
+    email: string;
+  };
+};
+
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -26,6 +42,8 @@ export async function GET(req: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "50");
     const exportFormat = searchParams.get("export");
+    const sortBy = searchParams.get("sortBy") || "createdAt";
+    const sortOrder = searchParams.get("sortOrder") || "desc";
 
     const where: Record<string, unknown> = {};
 
@@ -73,7 +91,8 @@ export async function GET(req: NextRequest) {
         orderBy: { createdAt: "desc" },
       });
 
-      const csv = generateAuditCSV(allEntries);
+      const enrichedEntries = await enrichAuditEntries(allEntries);
+      const csv = generateAuditCSV(enrichedEntries);
       return new NextResponse(csv, {
         headers: {
           "Content-Type": "text/csv",
@@ -83,6 +102,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Paginated response
+    const orderByField = sortBy === "user" ? "userId" : sortBy;
     const [entries, total] = await Promise.all([
       prisma.auditLog.findMany({
         where,
@@ -94,15 +114,18 @@ export async function GET(req: NextRequest) {
             },
           },
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: { [orderByField]: sortOrder },
         skip: (page - 1) * limit,
         take: limit,
       }),
       prisma.auditLog.count({ where }),
     ]);
 
+    // Enrich entries with target names and change summaries
+    const enrichedEntries = await enrichAuditEntries(entries);
+
     return NextResponse.json({
-      entries,
+      entries: enrichedEntries,
       total,
       page,
       limit,
@@ -116,6 +139,145 @@ export async function GET(req: NextRequest) {
   }
 }
 
+async function enrichAuditEntries(entries: AuditLogWithRelations[]) {
+  // Collect all target IDs by type
+  const taskIds = new Set<string>();
+  const findingIds = new Set<string>();
+  const sourceIds = new Set<string>();
+
+  entries.forEach((entry) => {
+    if (entry.targetId) {
+      if (entry.targetType === "TASK") taskIds.add(entry.targetId);
+      else if (entry.targetType === "FINDING") findingIds.add(entry.targetId);
+      else if (entry.targetType === "SOURCE") sourceIds.add(entry.targetId);
+    }
+  });
+
+  // Fetch all targets in parallel
+  const [tasks, findings, sources] = await Promise.all([
+    taskIds.size > 0
+      ? prisma.task.findMany({
+          where: { id: { in: Array.from(taskIds) } },
+          select: { id: true, title: true },
+        })
+      : [],
+    findingIds.size > 0
+      ? prisma.finding.findMany({
+          where: { id: { in: Array.from(findingIds) } },
+          select: { id: true, reference: true, title: true },
+        })
+      : [],
+    sourceIds.size > 0
+      ? prisma.source.findMany({
+          where: { id: { in: Array.from(sourceIds) } },
+          select: { id: true, name: true },
+        })
+      : [],
+  ]);
+
+  // Create lookup maps
+  const taskMap = new Map(tasks.map((t) => [t.id, t.title]));
+  const findingMap = new Map(findings.map((f) => [f.id, `${f.reference} - ${f.title}`]));
+  const sourceMap = new Map(sources.map((s) => [s.id, s.name]));
+
+  // Enrich entries
+  return entries.map((entry) => {
+    let targetName: string | null = null;
+
+    if (entry.targetId && entry.targetType) {
+      if (entry.targetType === "TASK") {
+        targetName = taskMap.get(entry.targetId) || entry.targetId;
+      } else if (entry.targetType === "FINDING") {
+        targetName = findingMap.get(entry.targetId) || entry.targetId;
+      } else if (entry.targetType === "SOURCE") {
+        targetName = sourceMap.get(entry.targetId) || entry.targetId;
+      }
+    }
+
+    const changeSummary = generateChangeSummary(entry.action, entry.details);
+
+    return {
+      ...entry,
+      targetName,
+      changeSummary,
+    };
+  });
+}
+
+function generateChangeSummary(action: string, details: Prisma.JsonValue): string {
+  if (!details || typeof details !== "object" || details === null) {
+    return "—";
+  }
+
+  const detailsObj = details as Record<string, unknown>;
+
+  // Status change
+  if (action === "task_status_changed" || action === "finding_status_changed") {
+    const from = detailsObj.from;
+    const to = detailsObj.to;
+    if (from && to) {
+      return `${String(from).replace(/_/g, " ")} → ${String(to).replace(/_/g, " ")}`;
+    }
+  }
+
+  // PIC assignment
+  if (action === "task_pic_assigned" || action === "finding_pic_assigned") {
+    const from = detailsObj.from;
+    const to = detailsObj.to;
+    if (from && to) {
+      return `${from} → ${to}`;
+    } else if (to) {
+      return `Assigned to ${to}`;
+    } else if (from) {
+      return `Unassigned from ${from}`;
+    }
+  }
+
+  // Narrative/description updates
+  if (action === "task_narrative_updated" || action === "finding_narrative_updated") {
+    return "Narrative updated";
+  }
+
+  // Evidence uploads
+  if (action === "evidence_uploaded") {
+    const filename = detailsObj.filename || detailsObj.fileName;
+    if (filename) {
+      return `Uploaded: ${filename}`;
+    }
+    return "Evidence uploaded";
+  }
+
+  // Priority changes
+  if (action === "task_priority_changed" || action === "finding_priority_changed") {
+    const from = detailsObj.from;
+    const to = detailsObj.to;
+    if (from && to) {
+      return `${from} → ${to}`;
+    }
+  }
+
+  // Due date changes
+  if (action === "task_due_date_changed") {
+    const from = detailsObj.from;
+    const to = detailsObj.to;
+    if (to) {
+      return `Due date: ${to}`;
+    }
+  }
+
+  // Generic changes with before/after
+  if (detailsObj.from && detailsObj.to) {
+    return `${detailsObj.from} → ${detailsObj.to}`;
+  }
+
+  // If details exist but no specific mapping
+  if (Object.keys(detailsObj).length > 0) {
+    return "Updated";
+  }
+
+  return "—";
+}
+
 function generateAuditCSV(entries: Array<{
   createdAt: string | Date;
   user: { name: string; email: string };
@@ -123,10 +285,12 @@ function generateAuditCSV(entries: Array<{
   action: string;
   targetType: string | null;
   targetId: string | null;
+  targetName?: string | null;
+  changeSummary?: string;
   ipAddress: string | null;
   details: Prisma.JsonValue;
 }>): string {
-  const headers = ["Timestamp", "User", "Module", "Action", "Target Type", "Target ID", "IP Address", "Details"];
+  const headers = ["Timestamp", "User", "Module", "Action", "Target Type", "Target Name", "Change", "IP Address", "Details"];
 
   const rows = entries.map((entry) => [
     new Date(entry.createdAt).toISOString(),
@@ -134,7 +298,8 @@ function generateAuditCSV(entries: Array<{
     escapeCSV(entry.module),
     escapeCSV(entry.action),
     escapeCSV(entry.targetType || ""),
-    escapeCSV(entry.targetId || ""),
+    escapeCSV(entry.targetName || entry.targetId || ""),
+    escapeCSV(entry.changeSummary || ""),
     escapeCSV(entry.ipAddress || ""),
     escapeCSV(entry.details ? JSON.stringify(entry.details) : ""),
   ]);

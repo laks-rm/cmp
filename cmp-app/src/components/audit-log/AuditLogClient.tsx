@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useEntity } from "@/contexts/EntityContext";
 import { format } from "date-fns";
-import { Download, ChevronLeft, ChevronRight, Clock } from "lucide-react";
+import { Download, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { useRouter } from "next/navigation";
 import toast from "@/lib/toast";
 
 type AuditEntry = {
@@ -13,6 +14,8 @@ type AuditEntry = {
   userId: string;
   targetType: string | null;
   targetId: string | null;
+  targetName: string | null;
+  changeSummary: string | null;
   details: Record<string, unknown> | null;
   ipAddress: string | null;
   createdAt: string;
@@ -30,9 +33,55 @@ const MODULE_COLORS: Record<string, string> = {
   USERS: "var(--amber)",
   TEAMS: "var(--green)",
   ENTITIES: "var(--purple)",
+  AUDIT_LOG: "var(--text-muted)",
 };
 
+const ACTION_LABELS: Record<string, string> = {
+  task_status_changed: "Status changed",
+  task_submitted_for_review: "Submitted for review",
+  task_approved: "Approved",
+  task_rejected: "Rejected",
+  task_created: "Task created",
+  task_updated: "Task updated",
+  task_deleted: "Task deleted",
+  task_pic_assigned: "PIC assigned",
+  task_narrative_updated: "Narrative updated",
+  task_priority_changed: "Priority changed",
+  task_due_date_changed: "Due date changed",
+  finding_created: "Finding raised",
+  finding_updated: "Finding updated",
+  finding_deleted: "Finding deleted",
+  finding_status_changed: "Status changed",
+  finding_pic_assigned: "PIC assigned",
+  finding_narrative_updated: "Narrative updated",
+  finding_priority_changed: "Priority changed",
+  evidence_uploaded: "Evidence uploaded",
+  evidence_deleted: "Evidence deleted",
+  source_created: "Source created",
+  source_updated: "Source updated",
+  source_deleted: "Source deleted",
+  user_logged_in: "Logged in",
+  user_logged_out: "Logged out",
+  user_created: "User created",
+  user_updated: "User updated",
+  entity_created: "Entity created",
+  entity_updated: "Entity updated",
+};
+
+const TARGET_TYPE_BADGES: Record<string, { label: string; color: string }> = {
+  TASK: { label: "TASK", color: "var(--blue)" },
+  FINDING: { label: "FINDING", color: "var(--red)" },
+  SOURCE: { label: "SOURCE", color: "var(--teal)" },
+  USER: { label: "USER", color: "var(--amber)" },
+  ENTITY: { label: "ENTITY", color: "var(--purple)" },
+  TEAM: { label: "TEAM", color: "var(--green)" },
+};
+
+type SortField = "createdAt" | "user" | "action" | "module";
+type SortOrder = "asc" | "desc";
+
 export function AuditLogClient() {
+  const router = useRouter();
   const { selectedEntityId } = useEntity();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +91,8 @@ export function AuditLogClient() {
   const [selectedUser] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  const [sortBy, setSortBy] = useState<SortField>("createdAt");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
   const limit = 50;
 
@@ -51,6 +102,8 @@ export function AuditLogClient() {
       const params = new URLSearchParams();
       params.set("page", page.toString());
       params.set("limit", limit.toString());
+      params.set("sortBy", sortBy);
+      params.set("sortOrder", sortOrder);
 
       if (selectedModule !== "all") params.set("module", selectedModule);
       if (selectedUser !== "all") params.set("userId", selectedUser);
@@ -70,7 +123,7 @@ export function AuditLogClient() {
     } finally {
       setLoading(false);
     }
-  }, [page, selectedModule, selectedUser, dateFrom, dateTo, selectedEntityId]);
+  }, [page, sortBy, sortOrder, selectedModule, selectedUser, dateFrom, dateTo, selectedEntityId]);
 
   useEffect(() => {
     fetchAuditLog();
@@ -106,14 +159,41 @@ export function AuditLogClient() {
     }
   };
 
-  const formatActionMessage = (entry: AuditEntry): string => {
-    const action = entry.action.toLowerCase().replace(/_/g, " ");
-    const targetName = entry.details?.targetName ? String(entry.details.targetName) : entry.targetId;
-
-    if (targetName) {
-      return `${action} ${entry.targetType?.toLowerCase() || "item"} "${targetName}"`;
+  const handleSort = (field: SortField) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(field);
+      setSortOrder(field === "createdAt" ? "desc" : "asc");
     }
-    return action;
+    setPage(1);
+  };
+
+  const getSortIcon = (field: SortField) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown size={14} style={{ color: "var(--text-muted)" }} />;
+    }
+    return sortOrder === "asc" ? (
+      <ArrowUp size={14} style={{ color: "var(--blue)" }} />
+    ) : (
+      <ArrowDown size={14} style={{ color: "var(--blue)" }} />
+    );
+  };
+
+  const handleTargetClick = (entry: AuditEntry) => {
+    if (!entry.targetId || !entry.targetType) return;
+
+    if (entry.targetType === "TASK") {
+      router.push(`/tasks/${entry.targetId}`);
+    } else if (entry.targetType === "FINDING") {
+      router.push(`/findings/${entry.targetId}`);
+    } else if (entry.targetType === "SOURCE") {
+      router.push(`/sources/${entry.targetId}`);
+    }
+  };
+
+  const getActionLabel = (action: string): string => {
+    return ACTION_LABELS[action] || action.replace(/_/g, " ");
   };
 
   const modules = ["all", "AUTH", "TASKS", "SOURCES", "FINDINGS", "USERS", "TEAMS", "ENTITIES", "AUDIT_LOG"];
@@ -190,77 +270,157 @@ export function AuditLogClient() {
         </button>
       </div>
 
-      {/* Audit Log Timeline */}
-      <div className="rounded-[14px] border bg-white" style={{ borderColor: "var(--border)" }}>
-        {loading ? (
-          <div className="flex items-center justify-center p-12">
-            <div className="text-center">
-              <Clock size={48} style={{ color: "var(--text-muted)", marginBottom: 12 }} className="mx-auto animate-pulse" />
-              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                Loading audit log...
-              </p>
-            </div>
-          </div>
-        ) : entries.length === 0 ? (
-          <div className="flex items-center justify-center p-12">
-            <div className="text-center">
-              <Clock size={48} style={{ color: "var(--text-muted)", marginBottom: 12 }} className="mx-auto" />
-              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                No audit entries found
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="divide-y" style={{ borderColor: "var(--border-light)" }}>
-            {entries.map((entry) => (
-              <div key={entry.id} className="flex gap-4 p-4 transition-colors hover:bg-[var(--bg-hover)]">
-                <div className="flex flex-col items-center">
-                  <div
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: MODULE_COLORS[entry.module] || "var(--text-muted)" }}
-                  />
-                  <div className="h-full w-px" style={{ backgroundColor: "var(--border-light)" }} />
-                </div>
-
-                <div className="flex-1 pb-4">
-                  <p className="text-sm leading-relaxed" style={{ color: "var(--text-primary)" }}>
-                    <strong>{entry.user?.name ?? "System"}</strong> {formatActionMessage(entry)}
-                  </p>
-                  <div className="mt-1 flex items-center gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
-                    <span>{format(new Date(entry.createdAt), "MMM d, yyyy 'at' h:mm a")}</span>
-                    <span>•</span>
-                    <span className="rounded px-2 py-0.5" style={{ backgroundColor: "var(--bg-subtle)" }}>
-                      {entry.module}
-                    </span>
-                    {entry.ipAddress && (
-                      <>
-                        <span>•</span>
-                        <span>{entry.ipAddress}</span>
-                      </>
-                    )}
+      {/* Table */}
+      <div className="overflow-hidden rounded-[14px] border bg-white" style={{ borderColor: "var(--border)" }}>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead style={{ backgroundColor: "var(--bg-subtle)" }}>
+              <tr>
+                <th
+                  className="cursor-pointer px-4 py-3 text-left text-xs font-medium transition-colors hover:bg-[var(--bg-hover)]"
+                  style={{ color: "var(--text-secondary)" }}
+                  onClick={() => handleSort("createdAt")}
+                >
+                  <div className="flex items-center gap-2">
+                    WHEN
+                    {getSortIcon("createdAt")}
                   </div>
+                </th>
+                <th
+                  className="cursor-pointer px-4 py-3 text-left text-xs font-medium transition-colors hover:bg-[var(--bg-hover)]"
+                  style={{ color: "var(--text-secondary)" }}
+                  onClick={() => handleSort("user")}
+                >
+                  <div className="flex items-center gap-2">
+                    WHO
+                    {getSortIcon("user")}
+                  </div>
+                </th>
+                <th
+                  className="cursor-pointer px-4 py-3 text-left text-xs font-medium transition-colors hover:bg-[var(--bg-hover)]"
+                  style={{ color: "var(--text-secondary)" }}
+                  onClick={() => handleSort("action")}
+                >
+                  <div className="flex items-center gap-2">
+                    ACTION
+                    {getSortIcon("action")}
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                  TARGET
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                  CHANGE
+                </th>
+                <th
+                  className="cursor-pointer px-4 py-3 text-left text-xs font-medium transition-colors hover:bg-[var(--bg-hover)]"
+                  style={{ color: "var(--text-secondary)" }}
+                  onClick={() => handleSort("module")}
+                >
+                  <div className="flex items-center gap-2">
+                    MODULE
+                    {getSortIcon("module")}
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+                    Loading audit log...
+                  </td>
+                </tr>
+              ) : entries.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+                    No audit entries found
+                  </td>
+                </tr>
+              ) : (
+                entries.map((entry, index) => (
+                  <tr
+                    key={entry.id}
+                    className="border-t transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{
+                      borderColor: "var(--border-light)",
+                      backgroundColor: index % 2 === 1 ? "var(--bg-subtle)" : "white",
+                    }}
+                  >
+                    {/* WHEN */}
+                    <td className="px-4 py-3 text-xs" style={{ color: "var(--text-secondary)" }}>
+                      {format(new Date(entry.createdAt), "MMM d, yyyy h:mm a")}
+                    </td>
 
-                  {entry.details && Object.keys(entry.details).length > 0 && (
-                    <details className="mt-2">
-                      <summary
-                        className="cursor-pointer text-xs font-medium"
-                        style={{ color: "var(--blue)" }}
+                    {/* WHO */}
+                    <td className="px-4 py-3 text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                      {entry.user?.name ?? "System"}
+                    </td>
+
+                    {/* ACTION */}
+                    <td className="px-4 py-3 text-sm" style={{ color: "var(--text-secondary)" }}>
+                      {getActionLabel(entry.action)}
+                    </td>
+
+                    {/* TARGET */}
+                    <td className="px-4 py-3">
+                      {entry.targetName && entry.targetType ? (
+                        <div className="flex items-center gap-2">
+                          {(entry.targetType === "TASK" || entry.targetType === "FINDING" || entry.targetType === "SOURCE") ? (
+                            <button
+                              onClick={() => handleTargetClick(entry)}
+                              className="max-w-xs truncate text-sm font-medium transition-colors hover:underline"
+                              style={{ color: "var(--blue)" }}
+                            >
+                              {entry.targetName}
+                            </button>
+                          ) : (
+                            <span className="max-w-xs truncate text-sm" style={{ color: "var(--text-primary)" }}>
+                              {entry.targetName}
+                            </span>
+                          )}
+                          {TARGET_TYPE_BADGES[entry.targetType] && (
+                            <span
+                              className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase"
+                              style={{
+                                backgroundColor: `${TARGET_TYPE_BADGES[entry.targetType].color}20`,
+                                color: TARGET_TYPE_BADGES[entry.targetType].color,
+                              }}
+                            >
+                              {TARGET_TYPE_BADGES[entry.targetType].label}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                          —
+                        </span>
+                      )}
+                    </td>
+
+                    {/* CHANGE */}
+                    <td className="px-4 py-3 text-sm" style={{ color: "var(--text-secondary)" }}>
+                      {entry.changeSummary || "—"}
+                    </td>
+
+                    {/* MODULE */}
+                    <td className="px-4 py-3">
+                      <span
+                        className="inline-block rounded px-2 py-1 text-xs font-medium"
+                        style={{
+                          backgroundColor: `${MODULE_COLORS[entry.module] || "var(--text-muted)"}20`,
+                          color: MODULE_COLORS[entry.module] || "var(--text-muted)",
+                        }}
                       >
-                        View details
-                      </summary>
-                      <pre
-                        className="mt-2 overflow-x-auto rounded-lg p-3 text-xs"
-                        style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-secondary)" }}
-                      >
-                        {JSON.stringify(entry.details, null, 2)}
-                      </pre>
-                    </details>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                        {entry.module}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
         {/* Pagination */}
         {!loading && entries.length > 0 && (
