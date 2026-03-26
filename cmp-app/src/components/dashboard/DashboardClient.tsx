@@ -125,6 +125,14 @@ type DashboardStats = {
   }>;
 };
 
+type Entity = {
+  id: string;
+  code: string;
+  name: string;
+  shortName: string | null;
+  jurisdiction: string | null;
+};
+
 export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
   const { selectedEntityId, setEntity } = useEntity();
   const router = useRouter();
@@ -132,6 +140,7 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   
   // Collapsible sections state
   const [showAllSources, setShowAllSources] = useState(false);
@@ -191,6 +200,29 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
   useEffect(() => {
     fetchDashboardStats();
   }, [selectedEntityId, retryCount, fetchDashboardStats]);
+
+  // Fetch entity details when a specific entity is selected
+  useEffect(() => {
+    async function fetchEntityDetails() {
+      if (selectedEntityId === "GROUP") {
+        setSelectedEntity(null);
+        return;
+      }
+
+      try {
+        const entities = await fetchApi<Entity[]>("/api/entities");
+        const entity = entities.find(e => e.id === selectedEntityId);
+        if (entity) {
+          setSelectedEntity(entity);
+        }
+      } catch (err) {
+        console.error("Failed to fetch entity details:", err);
+        // Don't show error for entity fetch - fallback to ID display
+      }
+    }
+
+    fetchEntityDetails();
+  }, [selectedEntityId]);
 
   // Chart colors - memoized to avoid recreating on every render
   const colors = useMemo(() => ({
@@ -479,7 +511,9 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
     };
   }, [stats?.statusByRiskRating, colors]);
 
-  const entityDisplayName = selectedEntityId === "GROUP" ? "All Entities" : selectedEntityId;
+  const entityDisplayName = selectedEntityId === "GROUP" 
+    ? "All Entities" 
+    : selectedEntity?.code || selectedEntity?.name || selectedEntityId;
 
   const formatDueDate = (dateString: string, isOverdue: boolean) => {
     const date = new Date(dateString);
