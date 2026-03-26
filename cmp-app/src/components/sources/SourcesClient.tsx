@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useEntity } from "@/contexts/EntityContext";
 import { Plus, FileText, SlidersHorizontal, ChevronDown, ChevronUp, X, Search, Trash2 } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import toast from "@/lib/toast";
@@ -56,6 +57,7 @@ const SOURCE_TYPE_COLORS = {
 export function SourcesClient() {
   const router = useRouter();
   const { data: session } = useSession();
+  const { selectedEntityId, selectedTeamId } = useEntity();
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
@@ -73,12 +75,25 @@ export function SourcesClient() {
 
   useEffect(() => {
     fetchSources();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEntityId, selectedTeamId]);
 
   const fetchSources = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/sources");
+      const params = new URLSearchParams();
+      
+      // Apply entity filter from context
+      if (selectedEntityId !== "GROUP") {
+        params.set("entityId", selectedEntityId);
+      }
+      
+      // Apply team filter from context
+      if (selectedTeamId !== "ALL") {
+        params.set("teamId", selectedTeamId);
+      }
+      
+      const res = await fetch(`/api/sources?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to fetch sources");
       const data = await res.json();
       setSources(data);
@@ -358,24 +373,6 @@ export function SourcesClient() {
             Loading sources...
           </p>
         </div>
-      ) : sources.length === 0 ? (
-        <div className="flex h-96 flex-col items-center justify-center rounded-[14px] border" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
-          <FileText size={64} style={{ color: "var(--text-muted)", marginBottom: 16 }} />
-          <p className="text-lg font-medium" style={{ color: "var(--text-primary)" }}>
-            No sources yet
-          </p>
-          <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-            Create your first compliance source to get started
-          </p>
-          <button
-            onClick={() => router.push("/sources/new")}
-            className="mt-4 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"
-            style={{ backgroundColor: "var(--blue)" }}
-          >
-            <Plus size={18} />
-            Create Source
-          </button>
-        </div>
       ) : filteredSources.length === 0 ? (
         <div className="flex h-96 flex-col items-center justify-center rounded-[14px] border" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
           <FileText size={64} style={{ color: "var(--text-muted)", marginBottom: 16 }} />
@@ -383,7 +380,9 @@ export function SourcesClient() {
             No sources match your filters
           </p>
           <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-            Try adjusting your search or filter criteria
+            {selectedEntityId !== "GROUP" || selectedTeamId !== "ALL"
+              ? "Try adjusting your entity/team filter or search criteria"
+              : "Try adjusting your search or filter criteria"}
           </p>
           <button
             onClick={() => {
@@ -396,6 +395,28 @@ export function SourcesClient() {
             <X size={18} />
             Clear Filters
           </button>
+        </div>
+      ) : sources.length === 0 ? (
+        <div className="flex h-96 flex-col items-center justify-center rounded-[14px] border" style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-subtle)" }}>
+          <FileText size={64} style={{ color: "var(--text-muted)", marginBottom: 16 }} />
+          <p className="text-lg font-medium" style={{ color: "var(--text-primary)" }}>
+            No sources found
+          </p>
+          <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+            {selectedEntityId !== "GROUP" 
+              ? "No sources available for the selected entity"
+              : "Create your first compliance source to get started"}
+          </p>
+          {selectedEntityId === "GROUP" && (
+            <button
+              onClick={() => router.push("/sources/new")}
+              className="mt-4 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white"
+              style={{ backgroundColor: "var(--blue)" }}
+            >
+              <Plus size={18} />
+              Create Source
+            </button>
+          )}
         </div>
       ) : (
         <div className="rounded-[14px] border bg-white overflow-hidden" style={{ borderColor: "var(--border)" }}>

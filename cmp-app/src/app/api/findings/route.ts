@@ -79,6 +79,7 @@ export async function GET(req: NextRequest) {
     const severity = searchParams.get("severity");
     const sourceId = searchParams.get("sourceId");
     const actionOwnerId = searchParams.get("actionOwnerId");
+    const entityId = searchParams.get("entityId");
     const limit = parseInt(searchParams.get("limit") || "100");
     const critical = searchParams.get("critical") === "true";
 
@@ -89,8 +90,10 @@ export async function GET(req: NextRequest) {
     if (sourceId) where.sourceId = sourceId;
     if (actionOwnerId) where.actionOwnerId = actionOwnerId;
 
-    // Entity access filter
-    if (session.user.entityIds.length > 0) {
+    // Entity filter - explicit entityId parameter takes precedence
+    if (entityId) {
+      where.entityId = entityId;
+    } else if (session.user.entityIds.length > 0) {
       where.entityId = { in: session.user.entityIds };
     }
 

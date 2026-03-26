@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { useEntity } from "@/contexts/EntityContext";
 import { format } from "date-fns";
 import { FileText, Paperclip } from "lucide-react";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -44,6 +45,7 @@ type Task = {
 export function ReviewQueueClient() {
   const { data: session } = useSession();
   const router = useRouter();
+  const { selectedEntityId } = useEntity();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"my-reviews" | "all-pending">("my-reviews");
@@ -52,7 +54,7 @@ export function ReviewQueueClient() {
   useEffect(() => {
     fetchTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, session]);
+  }, [activeTab, session, selectedEntityId]);
 
   const fetchTasks = async () => {
     if (!session?.user) return;
@@ -65,6 +67,10 @@ export function ReviewQueueClient() {
 
       if (activeTab === "my-reviews") {
         params.set("reviewerId", session.user.userId);
+      }
+      
+      if (selectedEntityId !== "GROUP") {
+        params.set("entityId", selectedEntityId);
       }
 
       const res = await fetch(`/api/tasks?${params.toString()}`);
@@ -145,7 +151,11 @@ export function ReviewQueueClient() {
             No tasks pending review
           </p>
           <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-            {activeTab === "my-reviews" ? "You're all caught up!" : "No tasks are pending review"}
+            {selectedEntityId !== "GROUP"
+              ? "No pending reviews for the selected entity"
+              : activeTab === "my-reviews"
+              ? "You're all caught up!"
+              : "No tasks are pending review"}
           </p>
         </div>
       ) : (

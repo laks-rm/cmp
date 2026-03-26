@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useEntity } from "@/contexts/EntityContext";
 import { ChevronRight, ChevronDown, ChevronUp, Plus, CheckCircle, Clock, AlertTriangle, Circle, Trash2 } from "lucide-react";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { SOURCE_TYPE_COLORS, ITEM_LABEL_MAP, FREQUENCY_LABELS, RISK_COLORS } from "@/types/source-management";
@@ -199,6 +200,7 @@ type DeletePreview = {
 
 export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
   const router = useRouter();
+  const { selectedEntityId } = useEntity();
   const [source, setSource] = useState<Source | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("clauses-tasks");
@@ -577,9 +579,17 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
   const typeConfig = SOURCE_TYPE_COLORS[source.sourceType as keyof typeof SOURCE_TYPE_COLORS];
   const itemLabel = ITEM_LABEL_MAP[source.sourceType] || { singular: "Clause", plural: "Clauses" };
   
-  // Calculate stats - only count tasks due to date
+  // Filter items and tasks by selected entity
+  const filteredItems = source.items.map((item) => ({
+    ...item,
+    tasks: selectedEntityId === "GROUP" 
+      ? item.tasks 
+      : item.tasks.filter((task) => task.entity.id === selectedEntityId),
+  }));
+  
+  // Calculate stats - only count tasks for filtered entity
   const now = new Date();
-  const allTasks = source.items.flatMap((item) => item.tasks);
+  const allTasks = filteredItems.flatMap((item) => item.tasks);
   
   const totalPendingTasks = source.items.reduce(
     (sum, item) => sum + (item.metadata?.pendingTasks?.length || 0),
@@ -680,8 +690,13 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
               {itemLabel.plural}
             </p>
             <p className="mt-1 text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
-              {source.items.length}
+              {filteredItems.filter((item) => item.tasks.length > 0).length}
             </p>
+            {selectedEntityId !== "GROUP" && (
+              <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                with tasks for selected entity
+              </p>
+            )}
           </div>
           <div className="rounded-[14px] border bg-white p-4" style={{ borderColor: "var(--border)" }}>
             <p className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
@@ -845,7 +860,7 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
             {/* By Clause View */}
             {viewMode === "by-clause" && (
               <div className="space-y-3">
-                {source.items.map((item) => {
+                {filteredItems.map((item) => {
                   const isExpanded = expandedClauses.has(item.id);
                   const isEditingThisClause = editingClauseId === item.id;
                   const pendingTasks = (item.metadata?.pendingTasks || []) as PendingTaskDefinition[];
@@ -1147,7 +1162,7 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {groupTasksByRecurrence(source.items).map((group) => {
+                    {groupTasksByRecurrence(filteredItems).map((group) => {
                       const task = group.representativeTask;
                       const currentTask = group.currentInstance!;
                       const now = new Date();

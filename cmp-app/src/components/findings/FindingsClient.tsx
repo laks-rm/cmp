@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { format, isPast } from "date-fns";
+import { useEntity } from "@/contexts/EntityContext";
 import { Plus, AlertTriangle, Download, ChevronDown } from "lucide-react";
 import { FindingModal } from "@/components/findings/FindingModal";
 import toast from "@/lib/toast";
@@ -53,6 +54,7 @@ const STATUS_COLORS = {
 
 export function FindingsClient() {
   const router = useRouter();
+  const { selectedEntityId } = useEntity();
   const [criticalFindings, setCriticalFindings] = useState<Finding[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,11 +66,17 @@ export function FindingsClient() {
     fetchCriticalFindings();
     fetchFindings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFilter]);
+  }, [activeFilter, selectedEntityId]);
 
   const fetchCriticalFindings = async () => {
     try {
-      const res = await fetch("/api/findings?critical=true");
+      const params = new URLSearchParams({ critical: "true" });
+      
+      if (selectedEntityId !== "GROUP") {
+        params.set("entityId", selectedEntityId);
+      }
+      
+      const res = await fetch(`/api/findings?${params.toString()}`);
       if (res.ok) setCriticalFindings(await res.json());
     } catch (error) {
       console.error("Error fetching critical findings:", error);
@@ -79,6 +87,10 @@ export function FindingsClient() {
     try {
       setLoading(true);
       const params = new URLSearchParams();
+      
+      if (selectedEntityId !== "GROUP") {
+        params.set("entityId", selectedEntityId);
+      }
       
       if (activeFilter !== "all") {
         if (activeFilter === "overdue") {
@@ -258,7 +270,11 @@ export function FindingsClient() {
             No findings found
           </p>
           <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-            {activeFilter === "all" ? "Create your first finding to get started" : "No findings match the selected filter"}
+            {selectedEntityId !== "GROUP"
+              ? "No findings for the selected entity"
+              : activeFilter === "all"
+              ? "Create your first finding to get started"
+              : "No findings match the selected filter"}
           </p>
         </div>
       ) : (
