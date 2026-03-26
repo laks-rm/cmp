@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { format, isPast } from "date-fns";
 import { Plus, AlertTriangle, Download, ChevronDown } from "lucide-react";
 import { FindingModal } from "@/components/findings/FindingModal";
-import { FindingDetailModal } from "@/components/findings/FindingDetailModal";
 import toast from "@/lib/toast";
 
 type Finding = {
@@ -52,12 +52,12 @@ const STATUS_COLORS = {
 };
 
 export function FindingsClient() {
+  const router = useRouter();
   const [criticalFindings, setCriticalFindings] = useState<Finding[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
   useEffect(() => {
@@ -139,7 +139,7 @@ export function FindingsClient() {
             return (
               <div
                 key={finding.id}
-                onClick={() => setSelectedFindingId(finding.id)}
+                onClick={() => router.push(`/findings/${finding.id}`)}
                 className="group cursor-pointer rounded-[14px] border-l-4 bg-white p-4 shadow-sm transition-all hover:shadow-md"
                 style={{ borderLeftColor: severityConfig.border }}
               >
@@ -299,7 +299,7 @@ export function FindingsClient() {
                   return (
                     <tr
                       key={finding.id}
-                      onClick={() => setSelectedFindingId(finding.id)}
+                      onClick={() => router.push(`/findings/${finding.id}`)}
                       className="cursor-pointer border-t transition-colors hover:bg-[var(--bg-hover)]"
                       style={{ borderColor: "var(--border-light)" }}
                     >
@@ -379,18 +379,6 @@ export function FindingsClient() {
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
-            fetchCriticalFindings();
-            fetchFindings();
-          }}
-        />
-      )}
-
-      {selectedFindingId && (
-        <FindingDetailModal
-          isOpen={!!selectedFindingId}
-          findingId={selectedFindingId}
-          onClose={() => setSelectedFindingId(null)}
-          onFindingUpdated={() => {
             fetchCriticalFindings();
             fetchFindings();
           }}

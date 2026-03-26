@@ -15,7 +15,6 @@ import {
   ChevronDown,
   CheckSquare,
   Square,
-  ExternalLink,
   ChevronLeft,
   ChevronRight,
   AlertCircle,
@@ -52,6 +51,13 @@ type Task = {
   responsibleTeam: { id: string; name: string } | null;
 };
 
+type TaskStats = {
+  active: number;
+  overdue: number;
+  dueThisWeek: number;
+  pendingReview: number;
+};
+
 type FilterChip = {
   id: string;
   label: string;
@@ -70,24 +76,39 @@ const TaskRow = memo(
     task,
     isSelected,
     onToggle,
-    onStatusChange,
+    onQuickAction,
     onRowClick,
   }: {
     task: Task;
     isSelected: boolean;
     onToggle: (id: string) => void;
-    onStatusChange: (id: string, status: string) => void;
+    onQuickAction: (id: string, status: string) => void;
     onRowClick: (id: string) => void;
   }) => {
-    const [showStatusMenu, setShowStatusMenu] = useState(false);
     const isOverdue = task.dueDate && !task.completedAt && isPast(new Date(task.dueDate));
-
     const riskConfig = RISK_COLORS[task.riskRating as keyof typeof RISK_COLORS];
+
+    const getQuickAction = () => {
+      const status = task.status;
+      if (status === "TO_DO") {
+        return { label: "Start", action: "IN_PROGRESS", color: "var(--blue)" };
+      } else if (status === "IN_PROGRESS") {
+        return { label: "Submit", navigate: true };
+      } else if (status === "PENDING_REVIEW") {
+        return { label: "Review", navigate: true };
+      }
+      return null;
+    };
+
+    const quickAction = getQuickAction();
 
     return (
       <tr 
         className="group border-t transition-colors hover:bg-[var(--bg-hover)] cursor-pointer" 
-        style={{ borderColor: "var(--border-light)" }}
+        style={{ 
+          borderColor: "var(--border-light)",
+          borderLeft: isOverdue ? "3px solid var(--red)" : undefined
+        }}
         onClick={() => onRowClick(task.id)}
       >
         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -96,11 +117,18 @@ const TaskRow = memo(
           </button>
         </td>
         <td className="px-4 py-3">
-          <div className="flex items-start gap-2">
-            <div className="flex-1">
-              <p className="font-medium leading-tight" style={{ color: "var(--text-primary)" }}>
-                {task.name}
-              </p>
+          <div className="flex flex-col gap-1">
+            <p className="font-medium leading-tight" style={{ color: "var(--text-primary)" }}>
+              {task.name}
+            </p>
+            <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
+              <span className="font-medium">{task.source.code}</span>
+              {task.sourceItem && (
+                <>
+                  <span>•</span>
+                  <span className="font-mono">{task.sourceItem.reference}</span>
+                </>
+              )}
             </div>
           </div>
         </td>
@@ -108,45 +136,31 @@ const TaskRow = memo(
           <EntityBadge entityCode={task.entity.code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} />
         </td>
         <td className="px-4 py-3">
-          <div>
-            <p className="text-sm font-medium leading-tight" style={{ color: "var(--text-secondary)" }}>
-              {task.source.name}
-            </p>
-            {task.sourceItem && (
-              <p className="font-mono text-xs leading-tight" style={{ color: "var(--text-muted)" }}>
-                {task.sourceItem.reference}
-              </p>
-            )}
-          </div>
-        </td>
-        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-          <div className="relative">
-            <button onClick={() => setShowStatusMenu(!showStatusMenu)} className="transition-opacity hover:opacity-80">
-              <StatusPill status={task.status as "TO_DO" | "IN_PROGRESS" | "PENDING_REVIEW" | "COMPLETED" | "DEFERRED" | "NOT_APPLICABLE"} />
-            </button>
-            {showStatusMenu && (
-              <div className="absolute left-0 top-full z-10 mt-1 w-48 rounded-lg border bg-white p-1.5 shadow-lg" style={{ borderColor: "var(--border)" }}>
-                {["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED", "DEFERRED", "NOT_APPLICABLE"].map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => {
-                      onStatusChange(task.id, status);
-                      setShowStatusMenu(false);
-                    }}
-                    className="flex w-full items-center rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--bg-subtle)]"
-                    style={{ color: "var(--text-secondary)" }}
-                  >
-                    <StatusPill status={status as "TO_DO" | "IN_PROGRESS" | "PENDING_REVIEW" | "COMPLETED" | "DEFERRED" | "NOT_APPLICABLE"} />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <StatusPill status={task.status as "TO_DO" | "IN_PROGRESS" | "PENDING_REVIEW" | "COMPLETED" | "DEFERRED" | "NOT_APPLICABLE"} />
         </td>
         <td className="px-4 py-3">
           <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: riskConfig.bg, color: riskConfig.color }}>
             {task.riskRating}
           </span>
+        </td>
+        <td className="px-4 py-3">
+          {task.pic ? (
+            <div className="flex items-center gap-2">
+              <div
+                className="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold text-white"
+                style={{ background: task.pic.avatarColor || "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)" }}
+              >
+                {task.pic.initials}
+              </div>
+              <span className="text-sm" style={{ color: "var(--text-primary)" }}>
+                {task.pic.name}
+              </span>
+            </div>
+          ) : (
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              Unassigned
+            </span>
+          )}
         </td>
         <td className="px-4 py-3">
           {task.responsibleTeam ? (
@@ -161,18 +175,6 @@ const TaskRow = memo(
               Not assigned
             </span>
           )}
-        </td>
-        <td className="px-4 py-3">
-          <div className="space-y-1">
-            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium" style={{ backgroundColor: "var(--bg-subtle)", color: "var(--text-secondary)" }}>
-              {task.frequency}
-            </span>
-            {task.quarter && (
-              <span className="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium" style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}>
-                {task.quarter}
-              </span>
-            )}
-          </div>
         </td>
         <td className="px-4 py-3">
           {task.dueDate ? (
@@ -197,19 +199,22 @@ const TaskRow = memo(
             </span>
           )}
         </td>
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            {task.clickupUrl && (
-              <a href={task.clickupUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs transition-opacity hover:opacity-60" style={{ color: "var(--blue)" }}>
-                <ExternalLink size={14} />
-              </a>
-            )}
-            {task.gdriveUrl && (
-              <a href={task.gdriveUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs transition-opacity hover:opacity-60" style={{ color: "var(--green)" }}>
-                <ExternalLink size={14} />
-              </a>
-            )}
-          </div>
+        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+          {quickAction && (
+            <button
+              onClick={() => {
+                if (quickAction.navigate) {
+                  onRowClick(task.id);
+                } else if (quickAction.action) {
+                  onQuickAction(task.id, quickAction.action);
+                }
+              }}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+              style={{ backgroundColor: quickAction.color || "var(--blue)" }}
+            >
+              {quickAction.label}
+            </button>
+          )}
         </td>
       </tr>
     );
@@ -226,6 +231,7 @@ export function TaskTrackerClient() {
   
   const { selectedEntityId, selectedTeamId } = useEntity();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [stats, setStats] = useState<TaskStats>({ active: 0, overdue: 0, dueThisWeek: 0, pendingReview: 0 });
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
@@ -313,6 +319,23 @@ export function TaskTrackerClient() {
       
       setTasks(filteredTasks);
       setTotal(filters.dueDateFrom || filters.dueDateTo ? filteredTasks.length : data.pagination?.total || 0);
+
+      // Calculate stats from the current result set
+      const now = new Date();
+      const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      
+      const calculatedStats: TaskStats = {
+        active: filteredTasks.length,
+        overdue: filteredTasks.filter((t: Task) => 
+          t.dueDate && !t.completedAt && isPast(new Date(t.dueDate))
+        ).length,
+        dueThisWeek: filteredTasks.filter((t: Task) => 
+          t.dueDate && !t.completedAt && new Date(t.dueDate) <= weekFromNow
+        ).length,
+        pendingReview: filteredTasks.filter((t: Task) => t.status === "PENDING_REVIEW").length,
+      };
+      
+      setStats(calculatedStats);
     } catch (error) {
       console.error("Failed to fetch tasks:", error);
       toast.error("Failed to load tasks");
@@ -361,6 +384,10 @@ export function TaskTrackerClient() {
       console.error("Failed to update status:", error);
       toast.error("Failed to update status");
     }
+  }
+
+  function handleQuickAction(taskId: string, status: string) {
+    handleStatusChange(taskId, status);
   }
 
   function toggleSelection(id: string) {
@@ -415,6 +442,73 @@ export function TaskTrackerClient() {
 
   return (
     <div className="space-y-4">
+      {/* Stats Row */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="rounded-lg border bg-white p-4" style={{ borderColor: "var(--border)" }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                Active Tasks
+              </p>
+              <p className="mt-1 text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
+                {stats.active}
+              </p>
+            </div>
+            <div className="rounded-full p-3" style={{ backgroundColor: "var(--blue-light)" }}>
+              <TrendingUp size={20} style={{ color: "var(--blue)" }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border bg-white p-4" style={{ borderColor: "var(--border)" }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                Overdue
+              </p>
+              <p className="mt-1 text-2xl font-bold" style={{ color: "var(--red)" }}>
+                {stats.overdue}
+              </p>
+            </div>
+            <div className="rounded-full p-3" style={{ backgroundColor: "var(--red-light)" }}>
+              <AlertCircle size={20} style={{ color: "var(--red)" }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border bg-white p-4" style={{ borderColor: "var(--border)" }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                Due This Week
+              </p>
+              <p className="mt-1 text-2xl font-bold" style={{ color: "var(--amber)" }}>
+                {stats.dueThisWeek}
+              </p>
+            </div>
+            <div className="rounded-full p-3" style={{ backgroundColor: "var(--amber-light)" }}>
+              <CalendarIcon size={20} style={{ color: "var(--amber)" }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border bg-white p-4" style={{ borderColor: "var(--border)" }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                Pending Review
+              </p>
+              <p className="mt-1 text-2xl font-bold" style={{ color: "var(--purple)" }}>
+                {stats.pendingReview}
+              </p>
+            </div>
+            <div className="rounded-full p-3" style={{ backgroundColor: "var(--purple-light)" }}>
+              <Clock size={20} style={{ color: "var(--purple)" }} />
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Calendar Info Chip */}
       <div className="flex items-center justify-between rounded-lg border p-3" style={{ backgroundColor: "var(--bg-subtle)", borderColor: "var(--border)" }}>
         <div className="flex items-center gap-2">
@@ -684,78 +778,75 @@ export function TaskTrackerClient() {
       <div className="rounded-[14px] border bg-white shadow-sm" style={{ borderColor: "var(--border)" }}>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead>
-              <tr className="border-b" style={{ backgroundColor: "var(--bg-subtle)", borderColor: "var(--border)" }}>
-                <th className="px-4 py-3 text-left">
-                  <button onClick={toggleAll} className="flex items-center justify-center">
-                    {selectedIds.size === tasks.length && tasks.length > 0 ? (
-                      <CheckSquare size={18} style={{ color: "var(--blue)" }} />
-                    ) : (
-                      <Square size={18} style={{ color: "var(--text-muted)" }} />
-                    )}
-                  </button>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Task Name
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Entity
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Source & Ref
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Status
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Risk
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Team
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Freq / Quarter
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Due Date
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Links
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
-                    Loading tasks...
-                  </td>
+              <thead>
+                <tr className="border-b" style={{ backgroundColor: "var(--bg-subtle)", borderColor: "var(--border)" }}>
+                  <th className="px-4 py-3 text-left">
+                    <button onClick={toggleAll} className="flex items-center justify-center">
+                      {selectedIds.size === tasks.length && tasks.length > 0 ? (
+                        <CheckSquare size={18} style={{ color: "var(--blue)" }} />
+                      ) : (
+                        <Square size={18} style={{ color: "var(--text-muted)" }} />
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    Task Name
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    Entity
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    Status
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    Risk
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    PIC
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    Team
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    Due Date
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    Action
+                  </th>
                 </tr>
-              ) : tasks.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center">
-                    <Filter size={48} className="mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
-                    <p className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
-                      No tasks found
-                    </p>
-                    <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-                      Try adjusting your filters
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                tasks.map((task) => (
-                  <TaskRow 
-                    key={task.id} 
-                    task={task} 
-                    isSelected={selectedIds.has(task.id)} 
-                    onToggle={toggleSelection} 
-                    onStatusChange={handleStatusChange}
-                    onRowClick={(id) => setModalTaskId(id)}
-                  />
-                ))
-              )}
-            </tbody>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+                      Loading tasks...
+                    </td>
+                  </tr>
+                ) : tasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center">
+                      <Filter size={48} className="mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
+                      <p className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
+                        No tasks found
+                      </p>
+                      <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                        Try adjusting your filters
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  tasks.map((task) => (
+                    <TaskRow 
+                      key={task.id} 
+                      task={task} 
+                      isSelected={selectedIds.has(task.id)} 
+                      onToggle={toggleSelection} 
+                      onQuickAction={handleQuickAction}
+                      onRowClick={(id) => router.push(`/tasks/${id}`)}
+                    />
+                  ))
+                )}
+              </tbody>
           </table>
         </div>
 

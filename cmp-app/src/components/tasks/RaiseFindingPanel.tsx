@@ -1,16 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { X } from "lucide-react";
+import { X, AlertTriangle } from "lucide-react";
 import toast from "@/lib/toast";
-
-type FindingModalProps = {
-  isOpen: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
-  linkedTaskId?: string;
-};
+import { useRouter } from "next/navigation";
 
 type Source = {
   id: string;
@@ -29,7 +22,17 @@ type Entity = {
   name: string;
 };
 
-export function FindingModal({ isOpen, onClose, onSuccess, linkedTaskId }: FindingModalProps) {
+type RaiseFindingPanelProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  linkedTaskId: string;
+  prefilledData?: {
+    sourceId?: string;
+    entityId?: string;
+  };
+};
+
+export function RaiseFindingPanel({ isOpen, onClose, linkedTaskId, prefilledData }: RaiseFindingPanelProps) {
   const router = useRouter();
   const [sources, setSources] = useState<Source[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -42,10 +45,9 @@ export function FindingModal({ isOpen, onClose, onSuccess, linkedTaskId }: Findi
     description: "",
     rootCause: "",
     impact: "",
-    managementResponse: "",
-    sourceId: "",
-    taskId: linkedTaskId || "",
-    entityId: "",
+    sourceId: prefilledData?.sourceId || "",
+    taskId: linkedTaskId,
+    entityId: prefilledData?.entityId || "",
     actionOwnerId: "",
     targetDate: "",
   });
@@ -55,30 +57,8 @@ export function FindingModal({ isOpen, onClose, onSuccess, linkedTaskId }: Findi
       fetchSources();
       fetchUsers();
       fetchEntities();
-      
-      // If linkedTaskId is provided, fetch task data and pre-fill fields
-      if (linkedTaskId) {
-        fetchLinkedTask(linkedTaskId);
-      }
     }
-  }, [isOpen, linkedTaskId]);
-
-  const fetchLinkedTask = async (taskId: string) => {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`);
-      if (res.ok) {
-        const taskData = await res.json();
-        setFormData(prev => ({
-          ...prev,
-          taskId: taskId,
-          sourceId: taskData.sourceId || "",
-          entityId: taskData.entityId || "",
-        }));
-      }
-    } catch (error) {
-      console.error("Failed to fetch linked task:", error);
-    }
-  };
+  }, [isOpen]);
 
   const fetchSources = async () => {
     try {
@@ -127,12 +107,19 @@ export function FindingModal({ isOpen, onClose, onSuccess, linkedTaskId }: Findi
       if (!res.ok) throw new Error("Failed to create finding");
 
       const finding = await res.json();
-      toast.success(`Finding ${finding.reference} created`);
-      onSuccess();
+      toast.success(
+        <div className="flex items-center gap-2">
+          <span>Finding {finding.reference} created</span>
+          <button
+            onClick={() => router.push(`/findings/${finding.id}`)}
+            className="text-xs underline"
+            style={{ color: "var(--blue)" }}
+          >
+            View finding
+          </button>
+        </div>
+      );
       onClose();
-      
-      // Navigate to the newly created finding page
-      router.push(`/findings/${finding.id}`);
     } catch (error) {
       console.error("Finding creation error:", error);
       toast.error("Failed to create finding");
@@ -150,14 +137,17 @@ export function FindingModal({ isOpen, onClose, onSuccess, linkedTaskId }: Findi
       onClick={onClose}
     >
       <div
-        className="relative flex max-h-[90vh] w-full max-w-[700px] flex-col overflow-hidden rounded-[20px] bg-white shadow-2xl"
+        className="relative flex max-h-[90vh] w-full max-w-[600px] flex-col overflow-hidden rounded-[20px] bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b p-6" style={{ borderColor: "var(--border)" }}>
           <div className="flex items-start justify-between">
-            <h2 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>
-              Create Finding
-            </h2>
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={20} style={{ color: "var(--amber)" }} />
+              <h2 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>
+                Raise Finding
+              </h2>
+            </div>
             <button
               onClick={onClose}
               className="rounded-md p-1.5 transition-colors"
@@ -238,32 +228,33 @@ export function FindingModal({ isOpen, onClose, onSuccess, linkedTaskId }: Findi
               />
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                Root Cause
-              </label>
-              <textarea
-                value={formData.rootCause}
-                onChange={(e) => setFormData({ ...formData, rootCause: e.target.value })}
-                placeholder="Underlying cause of the issue"
-                rows={2}
-                className="w-full rounded-lg border px-3 py-2 text-sm"
-                style={{ borderColor: "var(--border)" }}
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                Impact
-              </label>
-              <textarea
-                value={formData.impact}
-                onChange={(e) => setFormData({ ...formData, impact: e.target.value })}
-                placeholder="Potential or actual impact"
-                rows={2}
-                className="w-full rounded-lg border px-3 py-2 text-sm"
-                style={{ borderColor: "var(--border)" }}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                  Root Cause
+                </label>
+                <textarea
+                  value={formData.rootCause}
+                  onChange={(e) => setFormData({ ...formData, rootCause: e.target.value })}
+                  placeholder="Underlying cause"
+                  rows={2}
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  style={{ borderColor: "var(--border)" }}
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                  Impact
+                </label>
+                <textarea
+                  value={formData.impact}
+                  onChange={(e) => setFormData({ ...formData, impact: e.target.value })}
+                  placeholder="Potential impact"
+                  rows={2}
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  style={{ borderColor: "var(--border)" }}
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -317,20 +308,6 @@ export function FindingModal({ isOpen, onClose, onSuccess, linkedTaskId }: Findi
                 style={{ borderColor: "var(--border)" }}
               />
             </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                Management Response
-              </label>
-              <textarea
-                value={formData.managementResponse}
-                onChange={(e) => setFormData({ ...formData, managementResponse: e.target.value })}
-                placeholder="Management's response to the finding"
-                rows={2}
-                className="w-full rounded-lg border px-3 py-2 text-sm"
-                style={{ borderColor: "var(--border)" }}
-              />
-            </div>
           </div>
         </form>
 
@@ -348,7 +325,7 @@ export function FindingModal({ isOpen, onClose, onSuccess, linkedTaskId }: Findi
               onClick={handleSubmit}
               disabled={submitting}
               className="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-              style={{ backgroundColor: "var(--blue)" }}
+              style={{ backgroundColor: "var(--amber)" }}
             >
               {submitting ? "Creating..." : "Create Finding"}
             </button>
