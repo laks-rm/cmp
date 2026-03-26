@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Upload, FileText, Trash2, Download, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import toast from "@/lib/toast";
@@ -31,6 +31,7 @@ type TaskWorkAreaProps = {
   onNarrativeSave: () => void;
   onEvidenceUploaded: (evidence: Evidence) => void;
   onEvidenceDeleted: (evidenceId: string) => void;
+  onAutoStart?: () => void;
 };
 
 export function TaskWorkArea({
@@ -42,10 +43,46 @@ export function TaskWorkArea({
   onNarrativeSave,
   onEvidenceUploaded,
   onEvidenceDeleted,
+  onAutoStart,
 }: TaskWorkAreaProps) {
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [initialNarrative, setInitialNarrative] = useState(narrative);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Track if narrative has changed from initial state
+  useEffect(() => {
+    setIsDirty(narrative !== initialNarrative);
+  }, [narrative, initialNarrative]);
+
+  // Update initial narrative when task changes
+  useEffect(() => {
+    setInitialNarrative(narrative);
+    setIsDirty(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId]); // Only reset when task ID changes
+
+  const handleSaveDraft = async () => {
+    if (!isDirty) return;
+    
+    setIsSaving(true);
+    try {
+      await onNarrativeSave();
+      setInitialNarrative(narrative);
+      setIsDirty(false);
+      setSavedAt(new Date());
+      
+      // Clear saved indicator after 2 seconds
+      setTimeout(() => setSavedAt(null), 2000);
+    } catch (error) {
+      console.error("Save draft error:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -58,6 +95,12 @@ export function TaskWorkArea({
 
     try {
       setUploading(true);
+      
+      // Auto-start if this is the first action
+      if (onAutoStart) {
+        onAutoStart();
+      }
+      
       const formData = new FormData();
       formData.append("file", file);
       formData.append("taskId", taskId);
@@ -152,6 +195,28 @@ export function TaskWorkArea({
           }}
           onFocus={(e) => (e.currentTarget.style.borderColor = "var(--blue)")}
         />
+        
+        {/* Save Draft Button */}
+        {canEdit && isDirty && (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={handleSaveDraft}
+              disabled={isSaving || !isDirty}
+              className="rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50"
+              style={{ 
+                backgroundColor: "var(--blue)", 
+                color: "white",
+              }}
+            >
+              {isSaving ? "Saving..." : "Save draft"}
+            </button>
+            {savedAt && (
+              <span className="text-xs font-medium" style={{ color: "var(--green)" }}>
+                Draft saved
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Evidence Section */}

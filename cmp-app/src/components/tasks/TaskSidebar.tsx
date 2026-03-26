@@ -232,6 +232,71 @@ export function TaskSidebar({
             )}
           </div>
 
+          {/* Recurrence Info - Compact */}
+          {task.recurrenceGroupId && recurrenceTasks.length > 0 && (
+            <div>
+              <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                Recurrence
+              </label>
+              <p className="mb-2 text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                Instance {task.recurrenceIndex} of {task.recurrenceTotalCount}{task.quarter ? ` (${task.quarter})` : ''}
+              </p>
+              <div className="mb-2 flex flex-wrap gap-1">
+                {recurrenceTasks
+                  .sort((a, b) => (a.recurrenceIndex || 0) - (b.recurrenceIndex || 0))
+                  .map((recTask) => {
+                    const isCurrent = recTask.id === task.id;
+                    const isCompleted = recTask.status === "COMPLETED";
+                    const isActive = recTask.status === "IN_PROGRESS" || recTask.status === "TO_DO";
+                    const taskDate = recTask.dueDate ? new Date(recTask.dueDate) : null;
+                    const isTaskOverdue = taskDate && taskDate < new Date() && recTask.status !== "COMPLETED";
+
+                    let bgColor = "var(--bg-muted)";
+                    let borderColor = "var(--border)";
+                    let textColor = "var(--text-muted)";
+
+                    if (isCompleted) {
+                      bgColor = "var(--green)";
+                      borderColor = "var(--green)";
+                      textColor = "white";
+                    } else if (isTaskOverdue) {
+                      bgColor = "var(--red-light)";
+                      borderColor = "var(--red)";
+                      textColor = "var(--red)";
+                    } else if (isActive) {
+                      bgColor = "var(--blue-light)";
+                      borderColor = "var(--blue)";
+                      textColor = "var(--blue)";
+                    }
+
+                    if (isCurrent) {
+                      borderColor = "var(--blue)";
+                    }
+
+                    return (
+                      <button
+                        key={recTask.id}
+                        onClick={() => recTask.id !== task.id && onNavigateToTask(recTask.id)}
+                        className="flex h-[18px] w-[18px] items-center justify-center rounded text-[10px] font-semibold transition-all hover:scale-110"
+                        style={{
+                          backgroundColor: bgColor,
+                          color: textColor,
+                          border: `1px solid ${borderColor}`,
+                          cursor: recTask.id !== task.id ? "pointer" : "default",
+                        }}
+                        title={`Instance ${recTask.recurrenceIndex} - ${recTask.status}`}
+                      >
+                        {isCompleted ? "✓" : recTask.recurrenceIndex}
+                      </button>
+                    );
+                  })}
+              </div>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                {recurrenceTasks.filter(t => t.status === "COMPLETED").length} completed · {recurrenceTasks.filter(t => t.status === "IN_PROGRESS").length} in progress
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
               Due Date
@@ -252,74 +317,6 @@ export function TaskSidebar({
           </div>
         </div>
       </div>
-
-      {/* Recurrence Section */}
-      {task.recurrenceGroupId && recurrenceTasks.length > 0 && (
-        <div className="rounded-lg border p-4" style={{ backgroundColor: "white", borderColor: "var(--border)" }}>
-          <h4 className="mb-3 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-            Recurrence
-          </h4>
-          
-          <p className="mb-3 text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-            {task.frequency.replace("_", " ")} — instance {task.recurrenceIndex} of {task.recurrenceTotalCount}
-          </p>
-
-          <div className="mb-3 flex flex-wrap gap-2">
-            {recurrenceTasks
-              .sort((a, b) => (a.recurrenceIndex || 0) - (b.recurrenceIndex || 0))
-              .map((recTask) => {
-                const isCurrent = recTask.id === task.id;
-                const isCompleted = recTask.status === "COMPLETED";
-                const isActive = recTask.status === "IN_PROGRESS" || recTask.status === "TO_DO";
-                const taskDate = recTask.dueDate ? new Date(recTask.dueDate) : null;
-                const isTaskOverdue = taskDate && taskDate < new Date() && recTask.status !== "COMPLETED";
-
-                let bgColor = "var(--bg-muted)";
-                let borderColor = "var(--border)";
-                let textColor = "var(--text-muted)";
-
-                if (isCompleted) {
-                  bgColor = "var(--green)";
-                  borderColor = "var(--green)";
-                  textColor = "white";
-                } else if (isTaskOverdue) {
-                  bgColor = "var(--red-light)";
-                  borderColor = "var(--red)";
-                  textColor = "var(--red)";
-                } else if (isActive) {
-                  bgColor = "var(--blue-light)";
-                  borderColor = "var(--blue)";
-                  textColor = "var(--blue)";
-                }
-
-                if (isCurrent) {
-                  borderColor = "var(--blue)";
-                }
-
-                return (
-                  <button
-                    key={recTask.id}
-                    onClick={() => recTask.id !== task.id && onNavigateToTask(recTask.id)}
-                    className="flex h-10 w-10 items-center justify-center rounded-full text-xs font-semibold transition-all hover:scale-110"
-                    style={{
-                      backgroundColor: bgColor,
-                      color: textColor,
-                      border: `2px solid ${borderColor}`,
-                      cursor: recTask.id !== task.id ? "pointer" : "default",
-                    }}
-                    title={`Instance ${recTask.recurrenceIndex} - ${recTask.status}`}
-                  >
-                    {isCompleted ? "✓" : recTask.recurrenceIndex}
-                  </button>
-                );
-              })}
-          </div>
-
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            {recurrenceTasks.filter(t => t.status === "COMPLETED").length} completed · {recurrenceTasks.filter(t => t.status === "IN_PROGRESS").length} in progress
-          </p>
-        </div>
-      )}
 
       {/* Execution History */}
       {executionHistory.length > 0 && (

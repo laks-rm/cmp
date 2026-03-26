@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { FileText, Paperclip } from "lucide-react";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -28,13 +29,21 @@ type Task = {
     initials: string;
     avatarColor: string | null;
   } | null;
+  pic: {
+    id: string;
+    name: string;
+    initials: string;
+    avatarColor: string | null;
+  } | null;
   _count?: {
     evidence: number;
+    findings: number;
   };
 };
 
 export function ReviewQueueClient() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"my-reviews" | "all-pending">("my-reviews");
@@ -149,7 +158,7 @@ export function ReviewQueueClient() {
                     Task
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                    Submitted By
+                    PIC
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
                     Source
@@ -159,6 +168,9 @@ export function ReviewQueueClient() {
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
                     Evidence
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    Findings
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
                     Submitted
@@ -192,16 +204,16 @@ export function ReviewQueueClient() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        {task.assignee ? (
+                        {task.pic ? (
                           <div className="flex items-center gap-2">
                             <div
                               className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
-                              style={{ background: task.assignee.avatarColor || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
+                              style={{ background: task.pic.avatarColor || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
                             >
-                              {task.assignee.initials}
+                              {task.pic.initials}
                             </div>
                             <span className="text-sm" style={{ color: "var(--text-primary)" }}>
-                              {task.assignee.name}
+                              {task.pic.name}
                             </span>
                           </div>
                         ) : (
@@ -238,6 +250,19 @@ export function ReviewQueueClient() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
+                        {task._count?.findings && task._count.findings > 0 ? (
+                          <button
+                            onClick={() => window.location.href = `/findings?taskId=${task.id}`}
+                            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium transition-colors hover:bg-[var(--amber-light)]"
+                            style={{ color: "var(--amber)" }}
+                          >
+                            {task._count.findings} finding{task._count.findings !== 1 ? 's' : ''}
+                          </button>
+                        ) : (
+                          <span className="text-sm" style={{ color: "var(--text-muted)" }}>0</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
                         {task.submittedAt ? (
                           <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
                             {format(new Date(task.submittedAt), "MMM d, yyyy")}
@@ -248,7 +273,7 @@ export function ReviewQueueClient() {
                       </td>
                       <td className="px-4 py-3">
                         <button
-                          onClick={() => setSelectedTaskId(task.id)}
+                          onClick={() => router.push(`/tasks/${task.id}`)}
                           className="rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-opacity"
                           style={{ backgroundColor: "var(--blue)" }}
                           onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}

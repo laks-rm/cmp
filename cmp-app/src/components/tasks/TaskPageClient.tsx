@@ -153,6 +153,7 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
   const [newComment, setNewComment] = useState("");
   const [showFindingPanel, setShowFindingPanel] = useState(false);
   const [showSourceExpanded, setShowSourceExpanded] = useState(false);
+  const [hasAutoStarted, setHasAutoStarted] = useState(false);
 
   const fetchTaskData = useCallback(async () => {
     try {
@@ -284,6 +285,36 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
     } catch (error) {
       console.error("Start task error:", error);
       toast.error("Failed to start task");
+    }
+  };
+
+  const handleAutoStart = async () => {
+    if (hasAutoStarted || !task || task.status !== "TO_DO") return;
+    
+    setHasAutoStarted(true);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "IN_PROGRESS" }),
+      });
+
+      if (!res.ok) throw new Error("Failed to auto-start task");
+
+      toast.success("Task started automatically");
+      await fetchTaskData();
+    } catch (error) {
+      console.error("Auto-start task error:", error);
+      setHasAutoStarted(false); // Reset if failed
+    }
+  };
+
+  const handleNarrativeChangeWithAutoStart = (newNarrative: string) => {
+    setNarrative(newNarrative);
+    
+    // Auto-start if TO_DO and user is typing
+    if (task?.status === "TO_DO" && canActOnTask && newNarrative.trim().length > 0 && !hasAutoStarted) {
+      handleAutoStart();
     }
   };
 
@@ -497,10 +528,11 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
                 narrative={narrative}
                 evidence={evidence}
                 canEdit={canActOnTask && (task.status === "IN_PROGRESS" || task.status === "TO_DO")}
-                onNarrativeChange={setNarrative}
+                onNarrativeChange={handleNarrativeChangeWithAutoStart}
                 onNarrativeSave={handleNarrativeSave}
                 onEvidenceUploaded={(newEvidence) => setEvidence((prev) => [...prev, newEvidence])}
                 onEvidenceDeleted={(evidenceId) => setEvidence((prev) => prev.filter((e) => e.id !== evidenceId))}
+                onAutoStart={task.status === "TO_DO" ? handleAutoStart : undefined}
               />
             )}
 
