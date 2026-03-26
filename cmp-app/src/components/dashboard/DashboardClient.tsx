@@ -9,10 +9,15 @@ import {
   ArrowRight, 
   Clock, 
   FileCheck, 
-  UserX,
   TrendingUp,
   TrendingDown,
-  Minus
+  Minus,
+  AlertTriangle,
+  CheckCircle2,
+  Timer,
+  Shield,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 import { Chart, registerables } from "chart.js";
 
@@ -35,6 +40,13 @@ type DashboardStats = {
     unassigned: number;
     quarterCompletion: number;
     quarterCompletionPrevWeek: number;
+    openFindings: number;
+    criticalHighFindings: number;
+    slaAdherence: number;
+    avgCompletionDays: number | null;
+    activeSources: number;
+    totalClauses: number;
+    entitiesCount: number;
   };
   actionItems: Array<{
     id: string;
@@ -44,6 +56,7 @@ type DashboardStats = {
     dueDate: string;
     sourceName: string;
     isOverdue: boolean;
+    recurrenceGroupId: string | null;
   }>;
   completionTrend: Array<{
     month: string;
@@ -82,6 +95,35 @@ type DashboardStats = {
     toDo: number;
     overdue: number;
   }>;
+  findingsOverview: Array<{
+    id: string;
+    reference: string;
+    title: string;
+    severity: string;
+    entityCode: string;
+    actionOwner: string;
+    targetDate: string | null;
+    daysOpen: number;
+  }>;
+  compliancePosture: Array<{
+    sourceId: string;
+    sourceName: string;
+    sourceType: string;
+    entityCodes: string[];
+    total: number;
+    completed: number;
+    overdue: number;
+    openFindings: number;
+    highFindings: number;
+  }>;
+  upcomingDeadlines: Array<{
+    id: string;
+    name: string;
+    entityCode: string;
+    dueDate: string;
+    picName: string;
+    daysUntilDue: number | null;
+  }>;
 };
 
 export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
@@ -91,6 +133,11 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  
+  // Collapsible sections state
+  const [showAllSources, setShowAllSources] = useState(false);
+  const [teamWorkloadExpanded, setTeamWorkloadExpanded] = useState(false);
+  const [riskRatingExpanded, setRiskRatingExpanded] = useState(false);
 
   // Chart refs
   const completionTrendChartRef = useRef<HTMLCanvasElement>(null);
@@ -475,8 +522,8 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
           </p>
         </div>
         
-        <div className="grid grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map(i => (
             <div key={i} className="animate-pulse rounded-[14px] border bg-white p-4" style={{ borderColor: "var(--border)" }}>
               <div className="h-4 w-24 rounded bg-gray-200 mb-2"></div>
               <div className="h-8 w-16 rounded bg-gray-200 mb-1"></div>
@@ -506,7 +553,7 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
   if (!stats) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Greeting + Context */}
       <div>
         <h1 className="text-2xl font-semibold" style={{ color: "var(--text-primary)" }}>
@@ -520,8 +567,8 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
         </p>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* KPI Cards - 6 cards in 3x2 grid */}
+      <div className="grid grid-cols-3 gap-4">
         {/* Due This Week */}
         <div 
           className="cursor-pointer rounded-[14px] border bg-white p-4 shadow-sm transition-all hover:border-[var(--blue)] hover:shadow-md"
@@ -588,29 +635,72 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
           </p>
         </div>
 
-        {/* Unassigned */}
+        {/* Open Findings */}
         <div 
-          className="cursor-pointer rounded-[14px] border bg-white p-4 shadow-sm transition-all hover:border-[var(--amber)] hover:shadow-md"
+          className="cursor-pointer rounded-[14px] border bg-white p-4 shadow-sm transition-all hover:border-[var(--red)] hover:shadow-md"
           style={{ borderColor: "var(--border)" }}
-          onClick={() => router.push("/tasks?noPIC=true")}
+          onClick={() => router.push("/findings?status=OPEN")}
         >
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-              UNASSIGNED
+              OPEN FINDINGS
             </p>
-            <UserX size={16} style={{ color: "var(--amber)" }} />
+            <AlertTriangle size={16} style={{ color: "var(--red)" }} />
           </div>
           <p className="text-3xl font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-            {stats.kpis.unassigned}
+            {stats.kpis.openFindings}
+          </p>
+          <p className="text-xs" style={{ color: stats.kpis.criticalHighFindings > 0 ? "var(--red)" : "var(--text-muted)" }}>
+            {stats.kpis.criticalHighFindings > 0 
+              ? `${stats.kpis.criticalHighFindings} critical/high` 
+              : "No critical findings"}
+          </p>
+        </div>
+
+        {/* SLA Adherence */}
+        <div 
+          className="rounded-[14px] border bg-white p-4 shadow-sm"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+              SLA ADHERENCE
+            </p>
+            <CheckCircle2 size={16} style={{ 
+              color: stats.kpis.slaAdherence >= 90 ? "var(--green)" : stats.kpis.slaAdherence >= 75 ? "var(--amber)" : "var(--red)" 
+            }} />
+          </div>
+          <p className="text-3xl font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
+            {stats.kpis.slaAdherence}%
           </p>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Need PIC assignment
+            This quarter
+          </p>
+        </div>
+
+        {/* Average Completion Time */}
+        <div 
+          className="rounded-[14px] border bg-white p-4 shadow-sm"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+              AVG COMPLETION
+            </p>
+            <Timer size={16} style={{ color: "var(--blue)" }} />
+          </div>
+          <p className="text-3xl font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
+            {stats.kpis.avgCompletionDays !== null ? stats.kpis.avgCompletionDays : "—"}
+            {stats.kpis.avgCompletionDays !== null && <span className="text-base"> days</span>}
+          </p>
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            This quarter
           </p>
         </div>
       </div>
 
       {/* Two-column: Completion Trend + Action Items */}
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-3 gap-4">
         {/* Completion Trend - 2 columns */}
         <div className="col-span-2 rounded-[14px] border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>
           <div className="mb-4">
@@ -638,57 +728,75 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
             </div>
           </div>
           
-          <div style={{ height: "260px" }}>
+          <div style={{ height: "160px" }}>
             <canvas ref={completionTrendChartRef}></canvas>
           </div>
         </div>
 
-        {/* Action Items - 1 column */}
+        {/* Action Items - 1 column - Deduplicated and capped at 4 */}
         <div className="rounded-[14px] border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
               Your action items
             </h2>
-            <button 
-              className="flex items-center gap-1 text-xs font-medium transition-colors hover:text-[var(--blue)]"
-              style={{ color: "var(--text-secondary)" }}
-              onClick={() => router.push("/tasks")}
-            >
-              View all <ArrowRight size={12} />
-            </button>
+            {stats.actionItems.length > 4 && (
+              <button 
+                className="flex items-center gap-1 text-xs font-medium transition-colors hover:text-[var(--blue)]"
+                style={{ color: "var(--text-secondary)" }}
+                onClick={() => router.push("/tasks")}
+              >
+                View all <ArrowRight size={12} />
+              </button>
+            )}
           </div>
           
           <div className="space-y-2">
-            {stats.actionItems.slice(0, 5).map((item) => (
-              <div 
-                key={item.id}
-                className="cursor-pointer rounded-lg border p-3 transition-all hover:border-[var(--blue)] hover:shadow-sm"
-                style={{ borderColor: "var(--border-light)" }}
-                onClick={() => router.push(`/tasks?id=${item.id}`)}
-              >
-                <div className="mb-1 flex items-center gap-2">
-                  <div 
-                    className="h-2 w-2 rounded-full" 
-                    style={{ 
-                      backgroundColor: item.isOverdue 
-                        ? colors.overdue 
-                        : item.status === "PENDING_REVIEW" 
-                          ? colors.pendingReview 
-                          : colors.active 
-                    }}
-                  ></div>
-                  <EntityBadge entityCode={item.entityCode as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} size="sm" />
+            {(() => {
+              // Deduplicate by recurrenceGroupId - only show one per task definition
+              const seen = new Set<string>();
+              const deduped = stats.actionItems.filter(item => {
+                // If no recurrenceGroupId, always include (one-time tasks)
+                if (!item.recurrenceGroupId) return true;
+                
+                // If we've seen this recurrenceGroupId, skip
+                if (seen.has(item.recurrenceGroupId)) return false;
+                
+                // First time seeing this recurrenceGroupId
+                seen.add(item.recurrenceGroupId);
+                return true;
+              });
+              
+              return deduped.slice(0, 4).map((item) => (
+                <div 
+                  key={item.id}
+                  className="cursor-pointer rounded-lg border p-3 transition-all hover:border-[var(--blue)] hover:shadow-sm"
+                  style={{ borderColor: "var(--border-light)" }}
+                  onClick={() => router.push(`/tasks?id=${item.id}`)}
+                >
+                  <div className="mb-1 flex items-center gap-2">
+                    <div 
+                      className="h-2 w-2 rounded-full" 
+                      style={{ 
+                        backgroundColor: item.isOverdue 
+                          ? colors.overdue 
+                          : item.status === "PENDING_REVIEW" 
+                            ? colors.pendingReview 
+                            : colors.active 
+                      }}
+                    ></div>
+                    <EntityBadge entityCode={item.entityCode as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} size="sm" />
+                  </div>
+                  <p className="text-sm font-medium leading-tight" style={{ color: "var(--text-primary)" }}>
+                    {item.name}
+                  </p>
+                  <p className="mt-1 text-xs" style={{ 
+                    color: item.isOverdue ? "var(--red)" : "var(--text-muted)" 
+                  }}>
+                    {formatDueDate(item.dueDate, item.isOverdue)}
+                  </p>
                 </div>
-                <p className="text-sm font-medium leading-tight" style={{ color: "var(--text-primary)" }}>
-                  {item.name}
-                </p>
-                <p className="mt-1 text-xs" style={{ 
-                  color: item.isOverdue ? "var(--red)" : "var(--text-muted)" 
-                }}>
-                  {formatDueDate(item.dueDate, item.isOverdue)}
-                </p>
-              </div>
-            ))}
+              ));
+            })()}
             
             {stats.actionItems.length === 0 && (
               <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>
@@ -699,79 +807,19 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
         </div>
       </div>
 
-      {/* Two-column: Entity/Team + Sources */}
-      <div className="grid grid-cols-3 gap-6">
-        {/* Entity Comparison OR Team Workload */}
+      {/* Two-column: Compliance Posture + Upcoming Deadlines */}
+      <div className="grid grid-cols-3 gap-4">
+        {/* Compliance Posture by Source - 2 columns - Top 5 with toggle */}
         <div className="col-span-2 rounded-[14px] border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>
-          {selectedEntityId === "GROUP" && stats.entityComparison ? (
-            <>
-              <div className="mb-4">
-                <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-                  Entity compliance
-                </h2>
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  Current quarter completion. Click to view entity details.
-                </p>
-              </div>
-              
-              <div className="flex gap-4 mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.completed }}></div>
-                  <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Completed</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded" style={{ backgroundColor: isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)" }}></div>
-                  <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Remaining</span>
-                </div>
-              </div>
-              
-              <div style={{ height: `${(stats.entityComparison.length * 40) + 80}px` }}>
-                <canvas ref={entityComparisonChartRef}></canvas>
-              </div>
-            </>
-          ) : stats.teamWorkload ? (
-            <>
-              <div className="mb-4">
-                <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-                  Team workload
-                </h2>
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  Task distribution by team. Click to view team tasks.
-                </p>
-              </div>
-              
-              <div className="flex gap-4 mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.completed }}></div>
-                  <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Completed</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.active }}></div>
-                  <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Active</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.overdue }}></div>
-                  <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Overdue</span>
-                </div>
-              </div>
-              
-              <div style={{ height: `${(stats.teamWorkload.length * 40) + 80}px` }}>
-                <canvas ref={teamWorkloadChartRef}></canvas>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm py-8 text-center" style={{ color: "var(--text-muted)" }}>
-              No data available
-            </p>
-          )}
-        </div>
-
-        {/* Sources Needing Attention */}
-        <div className="rounded-[14px] border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-              Sources needing attention
-            </h2>
+            <div>
+              <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                Compliance posture by source
+              </h2>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Top {Math.min(5, stats.compliancePosture.length)} sources needing attention
+              </p>
+            </div>
             <button 
               className="flex items-center gap-1 text-xs font-medium transition-colors hover:text-[var(--blue)]"
               style={{ color: "var(--text-secondary)" }}
@@ -781,75 +829,365 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
             </button>
           </div>
           
-          <div className="space-y-3">
-            {stats.sourcesNeedingAttention.map((source) => (
-              <div 
-                key={source.sourceId}
-                className="cursor-pointer rounded-lg border p-3 transition-all hover:border-[var(--red)] hover:shadow-sm"
-                style={{ borderColor: "var(--border-light)" }}
-                onClick={() => router.push(`/tasks?sourceId=${source.sourceId}`)}
+          <div className="space-y-2">
+            {stats.compliancePosture.slice(0, showAllSources ? undefined : 5).map((source) => {
+              const completionPct = source.total > 0 ? Math.round((source.completed / source.total) * 100) : 0;
+              const posture = 
+                completionPct >= 80 && source.overdue === 0 && source.highFindings === 0 ? "good" :
+                completionPct >= 50 && source.highFindings === 0 ? "medium" : "poor";
+              const postureColor = 
+                posture === "good" ? "var(--green)" :
+                posture === "medium" ? "var(--amber)" : "var(--red)";
+              
+              return (
+                <div 
+                  key={source.sourceId}
+                  className="cursor-pointer rounded-lg border p-3 transition-all hover:border-[var(--blue)] hover:shadow-sm"
+                  style={{ borderColor: "var(--border-light)" }}
+                  onClick={() => router.push(`/tasks?sourceId=${source.sourceId}`)}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1">
+                      <p className="text-sm font-medium leading-tight mb-1" style={{ color: "var(--text-primary)" }}>
+                        {source.sourceName}
+                      </p>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-xs px-1.5 py-0.5 rounded" style={{ 
+                          backgroundColor: isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+                          color: "var(--text-secondary)" 
+                        }}>
+                          {source.sourceType.replace(/_/g, " ")}
+                        </span>
+                        {source.entityCodes.slice(0, 2).map(code => (
+                          <EntityBadge key={code} entityCode={code as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} size="sm" />
+                        ))}
+                        {source.entityCodes.length > 2 && (
+                          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                            +{source.entityCodes.length - 2}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right ml-2">
+                      {source.overdue > 0 && (
+                        <p className="text-xs font-semibold mb-1" style={{ color: "var(--red)" }}>
+                          {source.overdue} overdue
+                        </p>
+                      )}
+                      {source.highFindings > 0 && (
+                        <p className="text-xs font-semibold" style={{ color: "var(--red)" }}>
+                          {source.highFindings} critical
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                        {source.completed}/{source.total} done
+                      </span>
+                      <span className="text-xs font-semibold" style={{ color: postureColor }}>
+                        {completionPct}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)" }}>
+                      <div 
+                        className="h-full transition-all duration-500 rounded-full"
+                        style={{ 
+                          width: `${completionPct}%`,
+                          backgroundColor: postureColor
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            
+            {stats.compliancePosture.length === 0 && (
+              <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>
+                No active sources
+              </p>
+            )}
+            
+            {stats.compliancePosture.length > 5 && (
+              <button
+                className="w-full mt-2 py-2 text-xs font-medium rounded-lg transition-colors hover:bg-gray-50"
+                style={{ color: "var(--text-secondary)" }}
+                onClick={() => setShowAllSources(!showAllSources)}
               >
-                <div className="mb-1 flex items-center justify-between">
-                  <EntityBadge entityCode={source.entityCode as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} size="sm" />
-                  <span className="text-xs font-semibold" style={{ color: "var(--red)" }}>
-                    {source.overdue} overdue
+                {showAllSources ? "Show less" : `Show all ${stats.compliancePosture.length} sources`}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Upcoming Deadlines - 1 column - Capped at 5 */}
+        <div className="rounded-[14px] border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+              Upcoming deadlines
+            </h2>
+            {stats.upcomingDeadlines.length > 5 && (
+              <button 
+                className="flex items-center gap-1 text-xs font-medium transition-colors hover:text-[var(--blue)]"
+                style={{ color: "var(--text-secondary)" }}
+                onClick={() => router.push("/tasks")}
+              >
+                View all <ArrowRight size={12} />
+              </button>
+            )}
+          </div>
+          
+          <div className="space-y-2">
+            {stats.upcomingDeadlines.slice(0, 5).map((task) => (
+              <div 
+                key={task.id}
+                className="cursor-pointer rounded-lg border p-2 transition-all hover:border-[var(--blue)] hover:shadow-sm"
+                style={{ borderColor: "var(--border-light)" }}
+                onClick={() => router.push(`/tasks?id=${task.id}`)}
+              >
+                <div className="mb-1 flex items-center gap-2">
+                  <EntityBadge entityCode={task.entityCode as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} size="sm" />
+                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    {task.daysUntilDue !== null && (
+                      task.daysUntilDue === 0 ? "Today" :
+                      task.daysUntilDue === 1 ? "Tomorrow" :
+                      `${task.daysUntilDue}d`
+                    )}
                   </span>
                 </div>
-                <p className="text-sm font-medium leading-tight" style={{ color: "var(--text-primary)" }}>
-                  {source.sourceName}
+                <p className="text-sm font-medium leading-tight mb-0.5" style={{ color: "var(--text-primary)" }}>
+                  {task.name}
                 </p>
-                <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-                  {source.completed}/{source.total} tasks completed
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {task.picName}
                 </p>
               </div>
             ))}
             
-            {stats.sourcesNeedingAttention.length === 0 && (
+            {stats.upcomingDeadlines.length === 0 && (
               <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>
-                All sources on track
+                No upcoming deadlines
               </p>
             )}
           </div>
         </div>
       </div>
 
-      {/* Status by Risk Rating */}
-      <div className="rounded-[14px] border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>
-        <div className="mb-4">
-          <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-            Status distribution by risk rating
-          </h2>
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Current quarter
-          </p>
+      {/* Entity Compliance Cards OR Team Workload (Collapsible) + Findings Overview */}
+      <div className="grid grid-cols-3 gap-4">
+        {/* Entity Cards OR Team Workload - 2 columns */}
+        <div className="col-span-2 rounded-[14px] border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>
+          {selectedEntityId === "GROUP" && stats.entityComparison ? (
+            <>
+              <div className="mb-4">
+                <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Entity compliance
+                </h2>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Current quarter completion. Click to switch entity.
+                </p>
+              </div>
+              
+              {/* Entity Cards Grid */}
+              <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+                {stats.entityComparison.map((entity) => {
+                  const color = 
+                    entity.completionPct >= 80 ? "var(--green)" :
+                    entity.completionPct >= 50 ? "var(--amber)" : "var(--red)";
+                  
+                  return (
+                    <div
+                      key={entity.entityId}
+                      className="cursor-pointer rounded-lg border p-3 transition-all hover:border-[var(--blue)] hover:shadow-md"
+                      style={{ borderColor: "var(--border-light)" }}
+                      onClick={() => setEntity(entity.entityId)}
+                    >
+                      <div className="text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
+                        {entity.entityCode}
+                      </div>
+                      <div className="text-3xl font-bold mb-2" style={{ color }}>
+                        {entity.completionPct}%
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden mb-2" style={{ backgroundColor: isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)" }}>
+                        <div
+                          className="h-full transition-all duration-500"
+                          style={{ width: `${entity.completionPct}%`, backgroundColor: color }}
+                        ></div>
+                      </div>
+                      <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                        {entity.completed}/{entity.total} done
+                        {entity.total - entity.completed > 0 && ` — ${entity.total - entity.completed} remaining`}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : stats.teamWorkload ? (
+            <>
+              <div
+                className="mb-4 flex items-center justify-between cursor-pointer"
+                onClick={() => setTeamWorkloadExpanded(!teamWorkloadExpanded)}
+              >
+                <div>
+                  <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Team workload
+                  </h2>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    Task distribution by team
+                  </p>
+                </div>
+                {teamWorkloadExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+              </div>
+              
+              {teamWorkloadExpanded && (
+                <>
+                  <div className="flex gap-4 mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.completed }}></div>
+                      <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Completed</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.active }}></div>
+                      <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Active</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.overdue }}></div>
+                      <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Overdue</span>
+                    </div>
+                  </div>
+                  
+                  <div style={{ height: `${Math.min((stats.teamWorkload.length * 40) + 80, 300)}px` }}>
+                    <canvas ref={teamWorkloadChartRef}></canvas>
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <p className="text-sm py-8 text-center" style={{ color: "var(--text-muted)" }}>
+              No data available
+            </p>
+          )}
+        </div>
+
+        {/* Findings Overview - 1 column - Capped at 3 */}
+        <div className="rounded-[14px] border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+              Open findings
+            </h2>
+            {stats.findingsOverview.length > 3 && (
+              <button 
+                className="flex items-center gap-1 text-xs font-medium transition-colors hover:text-[var(--blue)]"
+                style={{ color: "var(--text-secondary)" }}
+                onClick={() => router.push("/findings?status=OPEN")}
+              >
+                View all <ArrowRight size={12} />
+              </button>
+            )}
+          </div>
+          
+          <div className="space-y-2">
+            {stats.findingsOverview.slice(0, 3).map((finding) => {
+              const severityColor = 
+                finding.severity === "CRITICAL" ? "var(--red)" :
+                finding.severity === "HIGH" ? "var(--red)" :
+                finding.severity === "MEDIUM" ? "var(--amber)" :
+                "var(--blue)";
+              
+              return (
+                <div 
+                  key={finding.id}
+                  className="cursor-pointer rounded-lg border p-2 transition-all hover:border-[var(--red)] hover:shadow-sm"
+                  style={{ borderColor: "var(--border-light)" }}
+                  onClick={() => router.push(`/findings?id=${finding.id}`)}
+                >
+                  <div className="mb-1 flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <EntityBadge entityCode={finding.entityCode as "DIEL" | "DGL" | "DBVI" | "FINSERV" | "GROUP"} size="sm" />
+                      <span className="text-xs px-1.5 py-0.5 rounded font-semibold" style={{ 
+                        backgroundColor: severityColor + "20",
+                        color: severityColor
+                      }}>
+                        {finding.severity}
+                      </span>
+                    </div>
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                      {finding.daysOpen}d
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium leading-tight mb-0.5" style={{ color: "var(--text-primary)" }}>
+                    {finding.title}
+                  </p>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    {finding.actionOwner}
+                  </p>
+                </div>
+              );
+            })}
+            
+            {stats.findingsOverview.length === 0 && (
+              <div className="text-center py-8">
+                <CheckCircle2 size={32} style={{ color: "var(--green)", margin: "0 auto 8px" }} />
+                <p className="text-sm font-medium" style={{ color: "var(--green)" }}>
+                  No open findings
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Status by Risk Rating - Collapsible */}
+      <div className="rounded-[14px] border bg-white shadow-sm" style={{ borderColor: "var(--border)" }}>
+        <div
+          className="p-6 flex items-center justify-between cursor-pointer"
+          onClick={() => setRiskRatingExpanded(!riskRatingExpanded)}
+        >
+          <div>
+            <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+              Status distribution by risk rating
+            </h2>
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+              Current quarter
+            </p>
+          </div>
+          {riskRatingExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
         </div>
         
-        <div className="flex gap-4 mb-4">
-          <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.completed }}></div>
-            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Completed</span>
+        {riskRatingExpanded && (
+          <div className="px-6 pb-6">
+            <div className="flex gap-4 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.completed }}></div>
+                <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Completed</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.inProgress }}></div>
+                <span className="text-xs" style={{ color: "var(--text-secondary)" }}>In progress</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.pendingReview }}></div>
+                <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Pending review</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.toDo }}></div>
+                <span className="text-xs" style={{ color: "var(--text-secondary)" }}>To do</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.overdue }}></div>
+                <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Overdue</span>
+              </div>
+            </div>
+            
+            <div style={{ height: "160px" }}>
+              <canvas ref={riskRatingChartRef}></canvas>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.inProgress }}></div>
-            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>In progress</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.pendingReview }}></div>
-            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Pending review</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.toDo }}></div>
-            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>To do</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded" style={{ backgroundColor: colors.overdue }}></div>
-            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>Overdue</span>
-          </div>
-        </div>
-        
-        <div style={{ height: "240px" }}>
-          <canvas ref={riskRatingChartRef}></canvas>
-        </div>
+        )}
       </div>
     </div>
   );

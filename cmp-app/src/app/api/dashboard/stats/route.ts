@@ -57,7 +57,6 @@ export async function GET(req: NextRequest) {
     endOfWeekUserTz.setHours(23, 59, 59, 999);
     
     const startOfQuarterDate = startOfQuarter(nowInUserTz);
-    const endOfQuarterDate = endOfQuarter(nowInUserTz);
     
     const oneWeekAgo = subDays(nowInUserTz, 7);
     const startOfQuarterOneWeekAgo = startOfQuarter(oneWeekAgo);
@@ -84,7 +83,14 @@ export async function GET(req: NextRequest) {
       teamWorkload,
       sourcesNeedingAttention,
       statusByRiskRating,
-      completionTrendData
+      completionTrendData,
+      openFindings,
+      openFindingsTopList,
+      slaAdherenceData,
+      avgCompletionData,
+      regulatoryCoverage,
+      compliancePosture,
+      upcomingDeadlines
     ] = await Promise.all([
       // 1. Due this week
       prisma.task.count({
@@ -135,26 +141,26 @@ export async function GET(req: NextRequest) {
         }
       }),
       
-      // 6. Quarter total (for completion percentage)
+      // 6. Quarter total (for completion percentage) - only tasks due to date
       prisma.task.count({
         where: {
           ...baseTaskFilter,
           status: { not: "PLANNED" },
           dueDate: {
             gte: startOfQuarterDate,
-            lte: endOfQuarterDate
+            lte: startOfTodayUTC // Only count tasks due up to today
           }
         }
       }),
       
-      // 7. Quarter completed
+      // 7. Quarter completed - only tasks due to date
       prisma.task.count({
         where: {
           ...baseTaskFilter,
           status: "COMPLETED",
           dueDate: {
             gte: startOfQuarterDate,
-            lte: endOfQuarterDate
+            lte: startOfTodayUTC // Only count tasks due up to today
           }
         }
       }),
@@ -201,18 +207,18 @@ export async function GET(req: NextRequest) {
         }
       }),
       
-      // 11. Entity comparison (only if GROUP view)
+      // 11. Entity comparison (only if GROUP view) - only count tasks due to date
       isGroupView ? prisma.$queryRaw`
         SELECT 
           e.id as "entityId",
           e.code as "entityCode",
           e.name as "entityName",
-          COUNT(CASE WHEN t.status != 'PLANNED' THEN 1 END)::int as total,
-          COUNT(CASE WHEN t.status = 'COMPLETED' THEN 1 END)::int as completed
+          COUNT(CASE WHEN t.status != 'PLANNED' AND t."dueDate" <= ${startOfTodayUTC} THEN 1 END)::int as total,
+          COUNT(CASE WHEN t.status = 'COMPLETED' AND t."dueDate" <= ${startOfTodayUTC} THEN 1 END)::int as completed
         FROM "Entity" e
         LEFT JOIN "Task" t ON t."entityId" = e.id 
           AND t."dueDate" >= ${startOfQuarterDate}
-          AND t."dueDate" <= ${endOfQuarterDate}
+          AND t."dueDate" <= ${startOfTodayUTC}
         WHERE e.id IN (
           SELECT UNNEST(${session.user.entityIds || []}::text[])
         )
@@ -226,17 +232,18 @@ export async function GET(req: NextRequest) {
         completed: number;
       }>> : Promise.resolve([]),
       
-      // 12. Team workload (only if specific entity selected)
+      // 12. Team workload (only if specific entity selected) - only count tasks due to date
       !isGroupView ? prisma.$queryRaw`
         SELECT 
           t.id as "teamId",
           t.name as "teamName",
-          COUNT(CASE WHEN task.status = 'COMPLETED' THEN 1 END)::int as completed,
-          COUNT(CASE WHEN task.status IN ('TO_DO', 'IN_PROGRESS', 'PENDING_REVIEW') THEN 1 END)::int as active,
+          COUNT(CASE WHEN task.status = 'COMPLETED' AND task."dueDate" <= ${startOfTodayUTC} THEN 1 END)::int as completed,
+          COUNT(CASE WHEN task.status IN ('TO_DO', 'IN_PROGRESS', 'PENDING_REVIEW') AND task."dueDate" <= ${startOfTodayUTC} THEN 1 END)::int as active,
           COUNT(CASE WHEN task.status NOT IN ('COMPLETED', 'PLANNED') AND task."dueDate" < ${startOfTodayUTC} THEN 1 END)::int as overdue
         FROM "Team" t
         LEFT JOIN "Task" task ON task."responsibleTeamId" = t.id 
           AND task."entityId" = ${entityIdParam}
+          AND task."dueDate" <= ${startOfTodayUTC}
         WHERE t."isActive" = true
         GROUP BY t.id, t.name
         HAVING COUNT(task.id) > 0
@@ -282,7 +289,7 @@ export async function GET(req: NextRequest) {
         overdue: number;
       }>>,
       
-      // 14. Status by risk rating (current quarter)
+      // 14. Status by risk rating (current quarter) - only count tasks due to date
       prisma.$queryRaw`
         SELECT 
           "riskRating",
@@ -294,7 +301,7 @@ export async function GET(req: NextRequest) {
         FROM "Task"
         WHERE status != 'PLANNED'
           AND "dueDate" >= ${startOfQuarterDate}
-          AND "dueDate" <= ${endOfQuarterDate}
+          AND "dueDate" <= ${startOfTodayUTC}
           ${!isGroupView ? Prisma.raw(`AND "entityId" = '${entityIdParam}'`) : Prisma.raw('')}
           ${isGroupView ? Prisma.raw(`AND "entityId" IN (SELECT UNNEST(ARRAY[${session.user.entityIds?.map(id => `'${id}'`).join(',')}]::text[]))`) : Prisma.raw('')}
         GROUP BY "riskRating"
@@ -308,7 +315,7 @@ export async function GET(req: NextRequest) {
         overdue: number;
       }>>,
       
-      // 15. Completion trend - last 6 months
+      // 15. Completion trend - last 6 months (only tasks due in each month)
       (async () => {
         const months = [];
         for (let i = 5; i >= 0; i--) {
@@ -325,37 +332,39 @@ export async function GET(req: NextRequest) {
         
         const results = await Promise.all(months.map(async ({ month, start, end }) => {
           const [completed, active, overdue] = await Promise.all([
-            // Completed in this month
+            // Completed tasks with due date in this month
             prisma.task.count({
               where: {
                 ...baseTaskFilter,
                 status: "COMPLETED",
-                completedAt: {
+                dueDate: {
                   gte: start,
                   lte: end
                 }
               }
             }),
             
-            // Active during this month (created before end, not completed before start)
+            // Active tasks with due date in this month
             prisma.task.count({
               where: {
                 ...baseTaskFilter,
                 status: { in: ["TO_DO", "IN_PROGRESS", "PENDING_REVIEW"] },
-                createdAt: { lte: end },
-                OR: [
-                  { completedAt: null },
-                  { completedAt: { gt: end } }
-                ]
+                dueDate: {
+                  gte: start,
+                  lte: end
+                }
               }
             }),
             
-            // Overdue during this month
+            // Overdue tasks with due date in this month
             prisma.task.count({
               where: {
                 ...baseTaskFilter,
                 status: { notIn: ["COMPLETED", "PLANNED"] },
-                dueDate: { lt: end },
+                dueDate: {
+                  gte: start,
+                  lt: start // Overdue means due date < start of month and not completed
+                },
                 createdAt: { lte: end }
               }
             })
@@ -365,7 +374,205 @@ export async function GET(req: NextRequest) {
         }));
         
         return results;
-      })()
+      })(),
+      
+      // 16. Open findings count by severity
+      prisma.$queryRaw`
+        SELECT 
+          severity,
+          COUNT(*)::int as count
+        FROM "Finding"
+        WHERE status IN ('OPEN', 'IN_PROGRESS')
+          ${!isGroupView ? Prisma.raw(`AND "entityId" = '${entityIdParam}'`) : Prisma.raw('')}
+          ${isGroupView ? Prisma.raw(`AND "entityId" IN (SELECT UNNEST(ARRAY[${session.user.entityIds?.map(id => `'${id}'`).join(',')}]::text[]))`) : Prisma.raw('')}
+        GROUP BY severity
+        ORDER BY 
+          CASE severity
+            WHEN 'CRITICAL' THEN 1
+            WHEN 'HIGH' THEN 2
+            WHEN 'MEDIUM' THEN 3
+            WHEN 'LOW' THEN 4
+            WHEN 'OBSERVATION' THEN 5
+          END
+      ` as Promise<Array<{
+        severity: string;
+        count: number;
+      }>>,
+      
+      // 17. Top 5 open findings for findings overview section
+      prisma.finding.findMany({
+        where: {
+          status: { in: ["OPEN", "IN_PROGRESS"] },
+          ...entityFilter
+        },
+        orderBy: [
+          { 
+            severity: "asc" // Will need custom sort: CRITICAL, HIGH, MEDIUM, LOW
+          },
+          { targetDate: "asc" }
+        ],
+        take: 5,
+        include: {
+          entity: { select: { code: true } },
+          actionOwner: { select: { name: true } }
+        }
+      }),
+      
+      // 18. SLA Adherence - tasks completed in current quarter on or before due date
+      (async () => {
+        // Need raw query for date comparison
+        const onTimeCount = await prisma.$queryRaw<Array<{ count: number }>>`
+          SELECT COUNT(*)::int as count
+          FROM "Task"
+          WHERE status = 'COMPLETED'
+            AND "completedAt" >= ${startOfQuarterDate}
+            AND "completedAt" <= ${nowInUserTz}
+            AND "dueDate" IS NOT NULL
+            AND "completedAt" <= "dueDate"
+            ${!isGroupView ? Prisma.raw(`AND "entityId" = '${entityIdParam}'`) : Prisma.raw('')}
+            ${isGroupView ? Prisma.raw(`AND "entityId" IN (SELECT UNNEST(ARRAY[${session.user.entityIds?.map(id => `'${id}'`).join(',')}]::text[]))`) : Prisma.raw('')}
+        `;
+        
+        const completedInQuarter = await prisma.task.count({
+          where: {
+            ...baseTaskFilter,
+            status: "COMPLETED",
+            completedAt: {
+              gte: startOfQuarterDate,
+              lte: nowInUserTz
+            },
+            dueDate: { not: null }
+          }
+        });
+        
+        return {
+          total: completedInQuarter,
+          onTime: onTimeCount[0]?.count || 0
+        };
+      })(),
+      
+      // 19. Average completion time - days from IN_PROGRESS to COMPLETED for current quarter
+      prisma.$queryRaw<Array<{ avgDays: number | null }>>`
+        SELECT AVG(EXTRACT(DAY FROM ("completedAt" - "createdAt")))::numeric as "avgDays"
+        FROM "Task"
+        WHERE status = 'COMPLETED'
+          AND "completedAt" >= ${startOfQuarterDate}
+          AND "completedAt" <= ${nowInUserTz}
+          AND "createdAt" IS NOT NULL
+          ${!isGroupView ? Prisma.raw(`AND "entityId" = '${entityIdParam}'`) : Prisma.raw('')}
+          ${isGroupView ? Prisma.raw(`AND "entityId" IN (SELECT UNNEST(ARRAY[${session.user.entityIds?.map(id => `'${id}'`).join(',')}]::text[]))`) : Prisma.raw('')}
+      `,
+      
+      // 20. Regulatory coverage - count of active sources and clauses
+      (async () => {
+        const [activeSources, totalClauses, entitiesWithSources] = await Promise.all([
+          prisma.source.count({
+            where: {
+              status: "ACTIVE",
+              entities: {
+                some: {
+                  entityId: isGroupView 
+                    ? { in: session.user.entityIds || [] }
+                    : entityIdParam
+                }
+              }
+            }
+          }),
+          
+          prisma.sourceItem.count({
+            where: {
+              source: {
+                status: "ACTIVE",
+                entities: {
+                  some: {
+                    entityId: isGroupView 
+                      ? { in: session.user.entityIds || [] }
+                      : entityIdParam
+                  }
+                }
+              }
+            }
+          }),
+          
+          prisma.sourceEntity.findMany({
+            where: {
+              entityId: isGroupView 
+                ? { in: session.user.entityIds || [] }
+                : entityIdParam,
+              source: { status: "ACTIVE" }
+            },
+            distinct: ["entityId"],
+            select: { entityId: true }
+          })
+        ]);
+        
+        return {
+          activeSources,
+          totalClauses,
+          entitiesCount: entitiesWithSources.length
+        };
+      })(),
+      
+      // 21. Compliance posture by source - richer view with progress and findings
+      prisma.$queryRaw`
+        SELECT 
+          s.id as "sourceId",
+          s.name as "sourceName",
+          s."sourceType",
+          ARRAY_AGG(DISTINCT e.code ORDER BY e.code) as "entityCodes",
+          COUNT(DISTINCT CASE WHEN t."dueDate" <= ${startOfTodayUTC} AND t.status != 'PLANNED' THEN t.id END)::int as total,
+          COUNT(DISTINCT CASE WHEN t.status = 'COMPLETED' AND t."dueDate" <= ${startOfTodayUTC} THEN t.id END)::int as completed,
+          COUNT(DISTINCT CASE WHEN t.status NOT IN ('COMPLETED', 'PLANNED', 'DEFERRED', 'NOT_APPLICABLE') 
+                AND t."dueDate" < ${startOfTodayUTC} THEN t.id END)::int as overdue,
+          COUNT(DISTINCT CASE WHEN f.status IN ('OPEN', 'IN_PROGRESS') THEN f.id END)::int as "openFindings",
+          COUNT(DISTINCT CASE WHEN f.status IN ('OPEN', 'IN_PROGRESS') AND f.severity IN ('CRITICAL', 'HIGH') THEN f.id END)::int as "highFindings"
+        FROM "Source" s
+        INNER JOIN "SourceEntity" se ON se."sourceId" = s.id
+        INNER JOIN "Entity" e ON se."entityId" = e.id
+        LEFT JOIN "Task" t ON t."sourceId" = s.id AND t."entityId" = e.id
+        LEFT JOIN "Finding" f ON f."sourceId" = s.id AND f."entityId" = e.id
+        WHERE s.status = 'ACTIVE'
+          ${!isGroupView ? Prisma.raw(`AND e.id = '${entityIdParam}'`) : Prisma.raw('')}
+          ${isGroupView ? Prisma.raw(`AND e.id IN (SELECT UNNEST(ARRAY[${session.user.entityIds?.map(id => `'${id}'`).join(',')}]::text[]))`) : Prisma.raw('')}
+        GROUP BY s.id, s.name, s."sourceType"
+        ORDER BY 
+          COUNT(DISTINCT CASE WHEN t.status NOT IN ('COMPLETED', 'PLANNED', 'DEFERRED', 'NOT_APPLICABLE') 
+                AND t."dueDate" < ${startOfTodayUTC} THEN t.id END) DESC,
+          COUNT(DISTINCT CASE WHEN f.status IN ('OPEN', 'IN_PROGRESS') AND f.severity IN ('CRITICAL', 'HIGH') THEN f.id END) DESC,
+          CASE 
+            WHEN COUNT(DISTINCT CASE WHEN t."dueDate" <= ${startOfTodayUTC} AND t.status != 'PLANNED' THEN t.id END) = 0 THEN 1
+            ELSE COUNT(DISTINCT CASE WHEN t.status = 'COMPLETED' AND t."dueDate" <= ${startOfTodayUTC} THEN t.id END)::float / 
+                 COUNT(DISTINCT CASE WHEN t."dueDate" <= ${startOfTodayUTC} AND t.status != 'PLANNED' THEN t.id END)::float
+          END ASC
+      ` as Promise<Array<{
+        sourceId: string;
+        sourceName: string;
+        sourceType: string;
+        entityCodes: string[];
+        total: number;
+        completed: number;
+        overdue: number;
+        openFindings: number;
+        highFindings: number;
+      }>>,
+      
+      // 22. Upcoming deadlines - tasks due in next 14 days
+      prisma.task.findMany({
+        where: {
+          ...baseTaskFilter,
+          status: { notIn: ["COMPLETED", "PLANNED", "DEFERRED", "NOT_APPLICABLE"] },
+          dueDate: {
+            gte: startOfTodayUTC,
+            lte: subDays(startOfTodayUTC, -14) // 14 days from today
+          }
+        },
+        orderBy: { dueDate: "asc" },
+        take: 10,
+        include: {
+          entity: { select: { code: true } },
+          pic: { select: { name: true } }
+        }
+      })
     ]);
 
     // Calculate KPI metrics
@@ -380,6 +587,25 @@ export async function GET(req: NextRequest) {
     const pendingReviewOldestDays = oldestPendingReview?.submittedAt
       ? Math.floor((nowInUserTz.getTime() - new Date(oldestPendingReview.submittedAt).getTime()) / (1000 * 60 * 60 * 24))
       : 0;
+    
+    // Calculate open findings by severity
+    const findingsBySeverity = openFindings.reduce((acc: Record<string, number>, item) => {
+      acc[item.severity] = item.count;
+      return acc;
+    }, {});
+    
+    const totalOpenFindings = openFindings.reduce((sum, item) => sum + item.count, 0);
+    const criticalHighFindings = (findingsBySeverity['CRITICAL'] || 0) + (findingsBySeverity['HIGH'] || 0);
+    
+    // Calculate SLA adherence percentage
+    const slaAdherence = slaAdherenceData.total > 0
+      ? Math.round((slaAdherenceData.onTime / slaAdherenceData.total) * 100)
+      : 0;
+    
+    // Calculate average completion time in days
+    const avgCompletionDays = avgCompletionData[0]?.avgDays 
+      ? Math.round(Number(avgCompletionData[0].avgDays))
+      : null;
 
     // Format action items
     const formattedActionItems = actionItems.map(task => ({
@@ -389,7 +615,8 @@ export async function GET(req: NextRequest) {
       status: task.status,
       dueDate: task.dueDate,
       sourceName: task.source?.name || "Unknown Source",
-      isOverdue: task.dueDate ? task.dueDate < startOfTodayUTC : false
+      isOverdue: task.dueDate ? task.dueDate < startOfTodayUTC : false,
+      recurrenceGroupId: task.recurrenceGroupId
     }));
 
     // Format entity comparison with completion percentage
@@ -400,6 +627,42 @@ export async function GET(req: NextRequest) {
       total: entity.total,
       completed: entity.completed,
       completionPct: entity.total > 0 ? Math.round((entity.completed / entity.total) * 100) : 0
+    }));
+    
+    // Format findings overview - sort by severity
+    const severityOrder = { CRITICAL: 1, HIGH: 2, MEDIUM: 3, LOW: 4, OBSERVATION: 5 };
+    const formattedFindings = openFindingsTopList
+      .sort((a, b) => {
+        const severityDiff = severityOrder[a.severity as keyof typeof severityOrder] - severityOrder[b.severity as keyof typeof severityOrder];
+        if (severityDiff !== 0) return severityDiff;
+        if (!a.targetDate) return 1;
+        if (!b.targetDate) return -1;
+        return new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime();
+      })
+      .map(finding => {
+        const daysOpen = Math.floor((nowInUserTz.getTime() - new Date(finding.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+        return {
+          id: finding.id,
+          reference: finding.reference,
+          title: finding.title,
+          severity: finding.severity,
+          entityCode: finding.entity.code,
+          actionOwner: finding.actionOwner.name,
+          targetDate: finding.targetDate,
+          daysOpen
+        };
+      });
+    
+    // Format upcoming deadlines
+    const formattedUpcomingDeadlines = upcomingDeadlines.map(task => ({
+      id: task.id,
+      name: task.name,
+      entityCode: task.entity.code,
+      dueDate: task.dueDate,
+      picName: task.pic?.name || "Unassigned",
+      daysUntilDue: task.dueDate 
+        ? Math.floor((new Date(task.dueDate).getTime() - startOfTodayUTC.getTime()) / (1000 * 60 * 60 * 24))
+        : null
     }));
 
     console.timeEnd("dashboard-stats");
@@ -412,14 +675,24 @@ export async function GET(req: NextRequest) {
         pendingReviewOldestDays,
         unassigned,
         quarterCompletion,
-        quarterCompletionPrevWeek: quarterCompletionLastWeek
+        quarterCompletionPrevWeek: quarterCompletionLastWeek,
+        openFindings: totalOpenFindings,
+        criticalHighFindings,
+        slaAdherence,
+        avgCompletionDays,
+        activeSources: regulatoryCoverage.activeSources,
+        totalClauses: regulatoryCoverage.totalClauses,
+        entitiesCount: regulatoryCoverage.entitiesCount
       },
       actionItems: formattedActionItems,
       completionTrend: completionTrendData,
       entityComparison: isGroupView ? formattedEntityComparison : null,
       teamWorkload: !isGroupView ? teamWorkload : null,
       sourcesNeedingAttention,
-      statusByRiskRating
+      statusByRiskRating,
+      findingsOverview: formattedFindings,
+      compliancePosture,
+      upcomingDeadlines: formattedUpcomingDeadlines
     });
 
   } catch (error) {
