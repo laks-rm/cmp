@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Upload, FileText, Trash2, Download, ExternalLink } from "lucide-react";
+import { Upload, FileText, Trash2, Download, ExternalLink, Sparkles, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import toast from "@/lib/toast";
 
@@ -51,7 +51,26 @@ export function TaskWorkArea({
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [initialNarrative, setInitialNarrative] = useState(narrative);
+  const [aiDrafting, setAiDrafting] = useState(false);
+  const [aiAvailable, setAiAvailable] = useState(false);
+  const [showAiComingSoon, setShowAiComingSoon] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Check AI availability
+  useEffect(() => {
+    const checkAiAvailability = async () => {
+      try {
+        const res = await fetch("/api/ai/status");
+        if (res.ok) {
+          const data = await res.json();
+          setAiAvailable(data.available);
+        }
+      } catch (error) {
+        console.error("Error checking AI availability:", error);
+      }
+    };
+    checkAiAvailability();
+  }, []);
 
   // Track if narrative has changed from initial state
   useEffect(() => {
@@ -81,6 +100,93 @@ export function TaskWorkArea({
       console.error("Save draft error:", error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleAiDraft = async () => {
+    // Check if AI is available
+    if (!aiAvailable) {
+      setShowAiComingSoon(true);
+      return;
+    }
+
+    if (aiDrafting) return;
+
+    // Check if narrative already exists
+    if (narrative.trim()) {
+      const action = confirm(
+        "A narrative already exists. Do you want to replace it? (Click 'Cancel' to append instead)"
+      );
+      
+      setAiDrafting(true);
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/ai-execute`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "Please draft the execution narrative based on the context",
+            conversationHistory: [],
+            action: "draft-narrative",
+          }),
+        });
+
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || "AI request failed");
+        }
+
+        const aiResponse = await res.json();
+        const draft = aiResponse.suggestedFields?.narrative || aiResponse.response;
+
+        if (action === true) {
+          // Replace
+          onNarrativeChange(draft);
+        } else if (action === false) {
+          // Append
+          onNarrativeChange(narrative + "\n\n" + draft);
+        }
+        
+        toast.success("AI draft generated");
+      } catch (error) {
+        console.error("AI draft error:", error);
+        toast.error(
+          error instanceof Error ? error.message : "Failed to generate draft"
+        );
+      } finally {
+        setAiDrafting(false);
+      }
+    } else {
+      // No existing narrative, just insert
+      setAiDrafting(true);
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/ai-execute`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: "Please draft the execution narrative based on the context",
+            conversationHistory: [],
+            action: "draft-narrative",
+          }),
+        });
+
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || "AI request failed");
+        }
+
+        const aiResponse = await res.json();
+        const draft = aiResponse.suggestedFields?.narrative || aiResponse.response;
+
+        onNarrativeChange(draft);
+        toast.success("AI draft generated");
+      } catch (error) {
+        console.error("AI draft error:", error);
+        toast.error(
+          error instanceof Error ? error.message : "Failed to generate draft"
+        );
+      } finally {
+        setAiDrafting(false);
+      }
     }
   };
 
@@ -198,9 +304,32 @@ export function TaskWorkArea({
     <div className="space-y-6">
       {/* Execution Narrative */}
       <div>
-        <label className="mb-2 block text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-          Execution Narrative
-        </label>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+            Execution Narrative
+          </label>
+          {canEdit && (
+            <button
+              onClick={handleAiDraft}
+              disabled={aiDrafting}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md transition-colors disabled:opacity-50"
+              style={{
+                backgroundColor: "var(--blue-light)",
+                color: "var(--blue)",
+              }}
+            >
+              {aiDrafting ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Sparkles className="w-3 h-3" />
+              )}
+              {aiDrafting ? "Drafting..." : "AI Draft"}
+              {!aiAvailable && !aiDrafting && (
+                <span className="ml-0.5 text-[9px] font-semibold">SOON</span>
+              )}
+            </button>
+          )}
+        </div>
         <textarea
           value={narrative}
           onChange={(e) => onNarrativeChange(e.target.value)}
@@ -366,6 +495,50 @@ export function TaskWorkArea({
           </p>
         )}
       </div>
+
+      {/* AI Coming Soon Modal */}
+      {showAiComingSoon && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.5)" }}
+          onClick={() => setShowAiComingSoon(false)}
+        >
+          <div 
+            className="relative max-w-md w-full mx-4 rounded-lg shadow-xl p-6"
+            style={{ backgroundColor: "white" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-4">
+              <div 
+                className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: "var(--blue-light)" }}
+              >
+                <Sparkles className="w-6 h-6" style={{ color: "var(--blue)" }} />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+                  OpenClaw AI — Coming Soon
+                </h3>
+                <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                  AI-assisted task execution is being configured for your environment.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowAiComingSoon(false)}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{ 
+                  backgroundColor: "var(--blue)", 
+                  color: "white" 
+                }}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 // @ts-expect-error - pdf-parse has incorrect type definitions
 import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || "",
-});
 
 type ExtractedClause = {
   reference: string;
@@ -172,11 +167,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
         {
           error:
-            "Anthropic API key not configured. Please set ANTHROPIC_API_KEY in your environment variables.",
+            "AI API key not configured. Please set OPENAI_API_KEY in your environment variables.",
         },
         { status: 500 }
       );
@@ -227,25 +222,34 @@ export async function POST(req: NextRequest) {
     let extractedData: ExtractionResponse | undefined;
     let retryCount = 0;
     const maxRetries = 2;
-    let lastMessage: Anthropic.Messages.Message | undefined;
+    let conversationHistory: Array<{ role: string; content: string }> = [];
+    let responseText = "";
 
     while (retryCount <= maxRetries) {
       try {
-        const message = await anthropic.messages.create({
-          model: "claude-3-5-sonnet-20241022",
-          max_tokens: 8000,
-          messages: [
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
+        const response = await fetch(`${process.env.OPENAI_BASE_URL}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: process.env.OPENAI_MODEL_NAME || "claude-sonnet-4-6",
+            messages: conversationHistory.length > 0 
+              ? conversationHistory 
+              : [{ role: "user", content: prompt }],
+            max_tokens: 8000,
+            temperature: 0.3,
+          }),
         });
 
-        lastMessage = message;
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`LiteLLM API error: ${response.status} - ${errorText}`);
+        }
 
-        const responseText =
-          message.content[0].type === "text" ? message.content[0].text : "";
+        const data = await response.json();
+        responseText = data.choices[0].message.content;
 
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         const jsonText = jsonMatch ? jsonMatch[0] : responseText;
@@ -272,7 +276,7 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        if (retryCount <= maxRetries && lastMessage) {
+        if (retryCount <= maxRetries) {
           const correctionPrompt = `The previous response was not valid JSON. Please return ONLY a valid JSON object with this exact structure, with no markdown formatting or extra text:
 {
   "clauses": [
@@ -294,26 +298,33 @@ export async function POST(req: NextRequest) {
 
 Please retry the extraction now.`;
 
-          const retryMessage = await anthropic.messages.create({
-            model: "claude-3-5-sonnet-20241022",
-            max_tokens: 8000,
-            messages: [
-              { role: "user", content: prompt },
-              {
-                role: "assistant",
-                content:
-                  lastMessage.content[0].type === "text"
-                    ? lastMessage.content[0].text
-                    : "",
-              },
-              { role: "user", content: correctionPrompt },
-            ],
+          conversationHistory = [
+            { role: "user", content: prompt },
+            { role: "assistant", content: responseText || "" },
+            { role: "user", content: correctionPrompt },
+          ];
+
+          const retryResponse = await fetch(`${process.env.LITELLM_BASE_URL}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${process.env.LITELLM_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-6",
+              messages: conversationHistory,
+              max_tokens: 8000,
+              temperature: 0.3,
+            }),
           });
 
-          const retryResponseText =
-            retryMessage.content[0].type === "text"
-              ? retryMessage.content[0].text
-              : "";
+          if (!retryResponse.ok) {
+            const errorText = await retryResponse.text();
+            throw new Error(`LiteLLM API error on retry: ${retryResponse.status} - ${errorText}`);
+          }
+
+          const retryData = await retryResponse.json();
+          const retryResponseText = retryData.choices[0].message.content;
           const retryJsonMatch = retryResponseText.match(/\{[\s\S]*\}/);
           const retryJsonText = retryJsonMatch
             ? retryJsonMatch[0]
@@ -326,7 +337,6 @@ Please retry the extraction now.`;
           ) {
             continue;
           }
-          lastMessage = retryMessage;
           break;
         }
       }

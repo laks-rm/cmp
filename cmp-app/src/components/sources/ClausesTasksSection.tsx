@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Trash2, ChevronDown, ChevronUp, Upload, FileText, Table as TableIcon } from "lucide-react";
 import type { ItemWithTasks, TaskDefinition, Entity, Team, User, ExtractedClause, InputMethod, ViewMode, MonitoringArea, TaskType } from "@/types/source-management";
 import { ITEM_LABEL_MAP, FREQUENCIES, FREQUENCY_LABELS, RISK_RATINGS, RISK_COLORS } from "@/types/source-management";
@@ -32,6 +32,7 @@ export function ClausesTasksSection({
   const [inputMethod, setInputMethod] = useState<InputMethod>("manual");
   const [viewMode, setViewMode] = useState<ViewMode>("by-clause");
   const [expandAllFields, setExpandAllFields] = useState(false);
+  const [aiExtractEnabled, setAiExtractEnabled] = useState(false);
   
   // AI Extract state
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -46,6 +47,22 @@ export function ClausesTasksSection({
   const [pastedData, setPastedData] = useState("");
 
   const itemLabel = ITEM_LABEL_MAP[sourceType] || { singular: "Clause", plural: "Clauses" };
+
+  // Check if AI features are enabled
+  useEffect(() => {
+    const checkFeatures = async () => {
+      try {
+        const res = await fetch("/api/features");
+        if (res.ok) {
+          const data = await res.json();
+          setAiExtractEnabled(data.aiExtractEnabled);
+        }
+      } catch (error) {
+        console.error("Failed to check features:", error);
+      }
+    };
+    checkFeatures();
+  }, []);
 
   const handleAddClause = () => {
     const newClause: ItemWithTasks = {
@@ -396,17 +413,19 @@ export function ClausesTasksSection({
 
       {/* Input Method Toggle */}
       <div className="flex rounded-lg border" style={{ borderColor: "var(--border)", width: "fit-content" }}>
-        <button
-          onClick={() => setInputMethod("ai-extract")}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
-            inputMethod === "ai-extract"
-              ? "bg-[var(--blue)] text-white"
-              : "text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
-          }`}
-        >
-          <Upload size={16} />
-          AI Extract
-        </button>
+        {aiExtractEnabled && (
+          <button
+            onClick={() => setInputMethod("ai-extract")}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+              inputMethod === "ai-extract"
+                ? "bg-[var(--blue)] text-white"
+                : "text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
+            }`}
+          >
+            <Upload size={16} />
+            AI Extract
+          </button>
+        )}
         <button
           onClick={() => setInputMethod("manual")}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${

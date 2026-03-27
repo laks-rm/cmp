@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, Send } from "lucide-react";
+import { ChevronRight, Send, Sparkles } from "lucide-react";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { EntityBadge } from "@/components/ui/EntityBadge";
 import { TaskStatusStepper } from "@/components/tasks/TaskStatusStepper";
@@ -12,6 +12,7 @@ import { TaskWorkArea } from "@/components/tasks/TaskWorkArea";
 import { TaskSidebar } from "@/components/tasks/TaskSidebar";
 import { TaskActionBar } from "@/components/tasks/TaskActionBar";
 import { RaiseFindingPanel } from "@/components/tasks/RaiseFindingPanel";
+import { AiExecutionPanel } from "@/components/tasks/AiExecutionPanel";
 import { format } from "date-fns";
 import toast from "@/lib/toast";
 
@@ -155,8 +156,18 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
   const [narrative, setNarrative] = useState("");
   const [newComment, setNewComment] = useState("");
   const [showFindingPanel, setShowFindingPanel] = useState(false);
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiAvailable, setAiAvailable] = useState(false);
   const [showSourceExpanded, setShowSourceExpanded] = useState(false);
   const [hasAutoStarted, setHasAutoStarted] = useState(false);
+  const [showAiComingSoon, setShowAiComingSoon] = useState(false);
+  const [preFillFindingData, setPreFillFindingData] = useState<{
+    title: string;
+    description: string;
+    severity: string;
+    rootCause?: string;
+    impact?: string;
+  } | null>(null);
 
   const fetchTaskData = useCallback(async () => {
     try {
@@ -223,6 +234,22 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
   useEffect(() => {
     fetchTaskData();
   }, [fetchTaskData]);
+
+  // Check AI availability
+  useEffect(() => {
+    const checkAiAvailability = async () => {
+      try {
+        const res = await fetch("/api/ai/status");
+        if (res.ok) {
+          const data = await res.json();
+          setAiAvailable(data.available);
+        }
+      } catch (error) {
+        console.error("Error checking AI availability:", error);
+      }
+    };
+    checkAiAvailability();
+  }, []);
 
   const handleNarrativeSave = async () => {
     if (narrative === (task?.narrative || "")) return;
@@ -380,6 +407,60 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
     }
   };
 
+  // AI Assist button handler
+  const handleAiAssistClick = async () => {
+    if (!aiAvailable) {
+      setShowAiComingSoon(true);
+      return;
+    }
+    setShowAiPanel(true);
+  };
+
+  // AI Panel handlers
+  const handleApplyNarrative = (text: string) => {
+    setNarrative(text);
+  };
+
+  const handleApplyField = async (field: string, value: string) => {
+    const res = await fetch(`/api/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+    });
+
+    if (!res.ok) throw new Error(`Failed to update ${field}`);
+
+    await fetchTaskData();
+  };
+
+  const handleOpenFinding = (data: {
+    title: string;
+    description: string;
+    severity: string;
+    rootCause?: string;
+    impact?: string;
+  }) => {
+    setPreFillFindingData(data);
+    setShowFindingPanel(true);
+    setShowAiPanel(false);
+  };
+
+  const handleSaveEvidence = async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("taskId", taskId);
+
+    const res = await fetch("/api/evidence", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!res.ok) throw new Error("Failed to upload evidence");
+
+    const newEvidence = await res.json();
+    setEvidence((prev) => [...prev, newEvidence]);
+  };
+
   if (loading || !task) {
     return (
       <div className="flex h-96 items-center justify-center" style={{ color: "var(--text-muted)" }}>
@@ -413,9 +494,28 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
 
       {/* Title Area */}
       <div>
-        <h1 className="mb-3 text-3xl font-bold" style={{ color: "var(--text-primary)" }}>
-          {task.name}
-        </h1>
+        <div className="flex items-start justify-between mb-3">
+          <h1 className="text-3xl font-bold" style={{ color: "var(--text-primary)" }}>
+            {task.name}
+          </h1>
+          {(task.status === "TO_DO" ||
+            task.status === "IN_PROGRESS" ||
+            task.status === "PENDING_REVIEW" ||
+            task.status === "COMPLETED") && (
+            <button
+              onClick={handleAiAssistClick}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm hover:shadow-md"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span className="font-medium text-sm">AI Assist</span>
+              {!aiAvailable && (
+                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded" style={{ backgroundColor: "rgba(255,255,255,0.2)" }}>
+                  SOON
+                </span>
+              )}
+            </button>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill status={task.status as "TO_DO" | "IN_PROGRESS" | "PENDING_REVIEW" | "COMPLETED" | "DEFERRED" | "NOT_APPLICABLE"} />
           <span
@@ -735,13 +835,79 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
       {/* Raise Finding Panel */}
       <RaiseFindingPanel
         isOpen={showFindingPanel}
-        onClose={() => setShowFindingPanel(false)}
+        onClose={() => {
+          setShowFindingPanel(false);
+          setPreFillFindingData(null);
+        }}
         linkedTaskId={taskId}
         prefilledData={{
           sourceId: task.sourceId || undefined,
           entityId: task.entityId || undefined,
+          ...(preFillFindingData && {
+            title: preFillFindingData.title,
+            description: preFillFindingData.description,
+            severity: preFillFindingData.severity as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+            rootCause: preFillFindingData.rootCause,
+            impact: preFillFindingData.impact,
+          }),
         }}
       />
+
+      {/* AI Execution Panel */}
+      {showAiPanel && (
+        <AiExecutionPanel
+          taskId={taskId}
+          onClose={() => setShowAiPanel(false)}
+          onApplyNarrative={handleApplyNarrative}
+          onApplyField={handleApplyField}
+          onOpenFinding={handleOpenFinding}
+          onSaveEvidence={handleSaveEvidence}
+        />
+      )}
+
+      {/* AI Coming Soon Modal */}
+      {showAiComingSoon && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.5)" }}
+          onClick={() => setShowAiComingSoon(false)}
+        >
+          <div 
+            className="relative max-w-md w-full mx-4 rounded-lg shadow-xl p-6"
+            style={{ backgroundColor: "white" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-4">
+              <div 
+                className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: "var(--blue-light)" }}
+              >
+                <Sparkles className="w-6 h-6" style={{ color: "var(--blue)" }} />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+                  OpenClaw AI — Coming Soon
+                </h3>
+                <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                  AI-assisted task execution is being configured for your environment.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowAiComingSoon(false)}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{ 
+                  backgroundColor: "var(--blue)", 
+                  color: "white" 
+                }}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
