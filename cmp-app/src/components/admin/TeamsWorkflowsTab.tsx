@@ -13,34 +13,57 @@ type Team = {
   narrativeRequired: boolean;
   statusFlow: unknown;
   isActive: boolean;
+  department?: {
+    id: string;
+    name: string;
+  } | null;
   _count?: {
     memberships: number;
   };
 };
 
+type Department = {
+  id: string;
+  name: string;
+};
+
 export function TeamsWorkflowsTab() {
   const [teams, setTeams] = useState<Team[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [editingTeam, setEditingTeam] = useState<string | null>(null);
+  const [selectedDepartment, setSelectedDepartment] = useState<string>("");
 
   useEffect(() => {
-    fetchTeams();
+    fetchData();
   }, []);
 
-  const fetchTeams = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/teams");
-      if (!res.ok) throw new Error("Failed to fetch teams");
-      const data = await res.json();
-      setTeams(data);
+      const [teamsRes, deptsRes] = await Promise.all([
+        fetch("/api/teams"),
+        fetch("/api/departments"),
+      ]);
+      
+      if (!teamsRes.ok) throw new Error("Failed to fetch teams");
+      if (!deptsRes.ok) throw new Error("Failed to fetch departments");
+      
+      const teamsData = await teamsRes.json();
+      const deptsData = await deptsRes.json();
+      
+      setTeams(teamsData);
+      setDepartments(deptsData.departments);
     } catch (error) {
-      console.error("Failed to fetch teams:", error);
-      toast.error("Failed to load teams");
+      console.error("Failed to fetch data:", error);
+      toast.error("Failed to load teams data");
     } finally {
       setLoading(false);
     }
   };
+
+  const fetchTeams = fetchData;
 
   const handleToggle = async (teamId: string, field: "approvalRequired" | "evidenceRequired" | "narrativeRequired", currentValue: boolean) => {
     try {
@@ -56,7 +79,6 @@ export function TeamsWorkflowsTab() {
 
       if (!res.ok) throw new Error("Failed to update team");
 
-      // Update local state
       setTeams((prev) =>
         prev.map((team) =>
           team.id === teamId ? { ...team, [field]: !currentValue } : team
@@ -70,6 +92,41 @@ export function TeamsWorkflowsTab() {
     } finally {
       setUpdating(null);
     }
+  };
+
+  const handleEditDepartment = (team: Team) => {
+    setEditingTeam(team.id);
+    setSelectedDepartment(team.department?.id || "");
+  };
+
+  const handleSaveDepartment = async (teamId: string) => {
+    try {
+      setUpdating(teamId);
+      const res = await fetch(`/api/teams`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId,
+          departmentId: selectedDepartment || null,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to update team");
+
+      await fetchTeams();
+      setEditingTeam(null);
+      toast.success("Department updated");
+    } catch (error) {
+      console.error("Failed to update department:", error);
+      toast.error("Failed to update department");
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingTeam(null);
+    setSelectedDepartment("");
   };
 
   if (loading) {
@@ -115,6 +172,9 @@ export function TeamsWorkflowsTab() {
                 <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
                   Team Name
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                  Department
+                </th>
                 <th className="px-4 py-3 text-center text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
                   Approval Workflow
                 </th>
@@ -150,6 +210,49 @@ export function TeamsWorkflowsTab() {
                         </div>
                       )}
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {editingTeam === team.id ? (
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={selectedDepartment}
+                          onChange={(e) => setSelectedDepartment(e.target.value)}
+                          className="rounded-lg border px-2 py-1 text-sm"
+                          style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                        >
+                          <option value="">None</option>
+                          {departments.map((dept) => (
+                            <option key={dept.id} value={dept.id}>
+                              {dept.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => handleSaveDepartment(team.id)}
+                          disabled={updating === team.id}
+                          className="rounded px-2 py-1 text-xs font-medium text-white"
+                          style={{ backgroundColor: "var(--blue)" }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          disabled={updating === team.id}
+                          className="rounded px-2 py-1 text-xs font-medium"
+                          style={{ color: "var(--text-secondary)" }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleEditDepartment(team)}
+                        className="text-sm hover:underline"
+                        style={{ color: team.department ? "var(--text-primary)" : "var(--text-muted)" }}
+                      >
+                        {team.department?.name || "—"}
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button

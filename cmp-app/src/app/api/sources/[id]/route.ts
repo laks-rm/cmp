@@ -32,6 +32,18 @@ export async function GET(req: NextRequest, context: { params: { id: string } })
             tasks: {
               include: {
                 entity: true,
+                monitoringArea: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+                taskType: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
                 assignee: {
                   select: {
                     id: true,

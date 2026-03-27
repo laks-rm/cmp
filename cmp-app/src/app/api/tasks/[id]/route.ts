@@ -33,6 +33,18 @@ export async function GET(req: NextRequest, context: { params: { id: string } })
           },
         },
         entity: true,
+        monitoringArea: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        taskType: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         assignee: {
           select: {
             id: true,
@@ -132,6 +144,9 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
     if (data.responsibleTeamId !== undefined) updates.responsibleTeamId = data.responsibleTeamId || null;
     if (data.picId !== undefined) updates.picId = data.picId || null;
     if (data.reviewerId !== undefined) updates.reviewerId = data.reviewerId || null;
+    if (data.monitoringAreaId !== undefined) updates.monitoringAreaId = data.monitoringAreaId;
+    if (data.taskTypeId !== undefined) updates.taskTypeId = data.taskTypeId;
+    if (data.deferralReason !== undefined) updates.deferralReason = data.deferralReason;
 
     if (data.status && data.status !== existingTask.status) {
       const allowedStatuses = existingTask.source.team.statusFlow as string[];

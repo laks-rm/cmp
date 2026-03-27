@@ -121,6 +121,8 @@ export async function GET(req: NextRequest) {
       },
       sourceItem: true,
       entity: true,
+      monitoringArea: { select: { id: true, name: true } },
+      taskType: { select: { id: true, name: true } },
       assignee: { select: { id: true, name: true, initials: true, avatarColor: true } },
       responsibleTeam: { select: { id: true, name: true } },
       pic: { select: { id: true, name: true, initials: true, avatarColor: true } },

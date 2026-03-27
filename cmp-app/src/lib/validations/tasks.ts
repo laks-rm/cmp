@@ -54,6 +54,9 @@ export const createTaskSchema = z.object({
 
 export const updateTaskSchema = createTaskSchema.partial().extend({
   status: z.enum(["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED", "DEFERRED", "NOT_APPLICABLE"]).optional(),
+  monitoringAreaId: z.string().uuid().optional().nullable(),
+  taskTypeId: z.string().uuid().optional().nullable(),
+  deferralReason: z.string().max(2000).optional().nullable(),
 });
 
 export const bulkTaskSchema = z.object({

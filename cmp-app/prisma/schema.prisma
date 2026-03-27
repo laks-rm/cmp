@@ -78,6 +78,36 @@ model IssuingAuthority {
   sources      Source[]
 }
 
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  teams       Team[]
+}
+
+model MonitoringArea {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tasks       Task[]
+}
+
+model TaskType {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tasks       Task[]
+}
+
 model Entity {
   id           String             @id @default(uuid())
   code         String             @unique
@@ -99,6 +129,7 @@ model Team {
   id                String           @id @default(uuid())
   name              String           @unique
   description       String?
+  departmentId      String?
   approvalRequired  Boolean          @default(true)
   evidenceRequired  Boolean          @default(false)
   narrativeRequired Boolean          @default(false)
@@ -106,9 +137,12 @@ model Team {
   isActive          Boolean          @default(true)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
+  department        Department?      @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   memberships       TeamMembership[]
   sources           Source[]
   responsibleTasks  Task[]           @relation("TaskResponsibleTeam")
+
+  @@index([departmentId])
 }
 
 model Role {
@@ -257,11 +291,11 @@ model SourceItem {
 }
 
 model Task {
-  id                   String      @id @default(uuid())
+  id                   String           @id @default(uuid())
   name                 String
   description          String?
   expectedOutcome      String?
-  status               TaskStatus  @default(TO_DO)
+  status               TaskStatus       @default(TO_DO)
   riskRating           RiskRating
   frequency            Frequency
   quarter              String?
@@ -269,9 +303,9 @@ model Task {
   startDate            DateTime?
   testingPeriodStart   DateTime?
   testingPeriodEnd     DateTime?
-  evidenceRequired     Boolean     @default(false)
-  narrativeRequired    Boolean     @default(false)
-  reviewRequired       Boolean     @default(true)
+  evidenceRequired     Boolean          @default(false)
+  narrativeRequired    Boolean          @default(false)
+  reviewRequired       Boolean          @default(true)
   narrative            String?
   clickupUrl           String?
   gdriveUrl            String?
@@ -279,6 +313,9 @@ model Task {
   recurrenceIndex      Int?
   recurrenceTotalCount Int?
   plannedDate          DateTime?
+  monitoringAreaId     String?
+  taskTypeId           String?
+  deferralReason       String?
   sourceId             String
   sourceItemId         String?
   entityId             String
@@ -289,16 +326,18 @@ model Task {
   submittedAt          DateTime?
   reviewedAt           DateTime?
   completedAt          DateTime?
-  version              Int         @default(0)
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
-  source               Source      @relation(fields: [sourceId], references: [id], onDelete: Restrict)
-  sourceItem           SourceItem? @relation(fields: [sourceItemId], references: [id], onDelete: SetNull)
-  entity               Entity      @relation(fields: [entityId], references: [id], onDelete: Restrict)
-  assignee             User?       @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  responsibleTeam      Team?       @relation("TaskResponsibleTeam", fields: [responsibleTeamId], references: [id], onDelete: SetNull)
-  pic                  User?       @relation("TaskPIC", fields: [picId], references: [id], onDelete: SetNull)
-  reviewer             User?       @relation("TaskReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  version              Int              @default(0)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  monitoringArea       MonitoringArea?  @relation(fields: [monitoringAreaId], references: [id], onDelete: SetNull)
+  taskType             TaskType?        @relation(fields: [taskTypeId], references: [id], onDelete: SetNull)
+  source               Source           @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  sourceItem           SourceItem?      @relation(fields: [sourceItemId], references: [id], onDelete: SetNull)
+  entity               Entity           @relation(fields: [entityId], references: [id], onDelete: Restrict)
+  assignee             User?            @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  responsibleTeam      Team?            @relation("TaskResponsibleTeam", fields: [responsibleTeamId], references: [id], onDelete: SetNull)
+  pic                  User?            @relation("TaskPIC", fields: [picId], references: [id], onDelete: SetNull)
+  reviewer             User?            @relation("TaskReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
   evidence             Evidence[]
   comments             Comment[]
   findings             Finding[]
@@ -313,6 +352,8 @@ model Task {
   @@index([recurrenceGroupId])
   @@index([plannedDate])
   @@index([id, version])
+  @@index([monitoringAreaId])
+  @@index([taskTypeId])
 }
 
 model Evidence {

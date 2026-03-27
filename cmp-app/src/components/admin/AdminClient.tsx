@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Users, Shield, Building2, Users2, Bell } from "lucide-react";
+import { Users, Shield, Building2, Users2, Bell, Building, Layers, Tag } from "lucide-react";
 import { UsersAccessTab } from "@/components/admin/UsersAccessTab";
 import { RolesPermissionsTab } from "@/components/admin/RolesPermissionsTab";
 import { EntitiesTab } from "@/components/admin/EntitiesTab";
 import { TeamsWorkflowsTab } from "@/components/admin/TeamsWorkflowsTab";
 import { NotificationsTab } from "@/components/admin/NotificationsTab";
+import { DepartmentsTab } from "@/components/admin/DepartmentsTab";
+import { MonitoringAreasTab } from "@/components/admin/MonitoringAreasTab";
+import { TaskTypesTab } from "@/components/admin/TaskTypesTab";
 
-type Tab = "users" | "roles" | "entities" | "teams" | "notifications";
+type Tab = "users" | "roles" | "entities" | "teams" | "notifications" | "departments" | "monitoring-areas" | "task-types";
 
 const TABS = [
   { id: "users" as const, label: "Users & Access", icon: Users },
@@ -16,6 +19,9 @@ const TABS = [
   { id: "entities" as const, label: "Entities", icon: Building2 },
   { id: "teams" as const, label: "Teams & Workflows", icon: Users2 },
   { id: "notifications" as const, label: "Notifications", icon: Bell },
+  { id: "departments" as const, label: "Departments", icon: Building },
+  { id: "monitoring-areas" as const, label: "Monitoring Areas", icon: Layers },
+  { id: "task-types" as const, label: "Task Types", icon: Tag },
 ];
 
 export function AdminClient() {
@@ -70,6 +76,9 @@ export function AdminClient() {
         {activeTab === "entities" && <EntitiesTab />}
         {activeTab === "teams" && <TeamsWorkflowsTab />}
         {activeTab === "notifications" && <NotificationsTab />}
+        {activeTab === "departments" && <DepartmentsTab />}
+        {activeTab === "monitoring-areas" && <MonitoringAreasTab />}
+        {activeTab === "task-types" && <TaskTypesTab />}
       </div>
     </div>
   );

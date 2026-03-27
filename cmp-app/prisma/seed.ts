@@ -20,11 +20,14 @@ const MODULES = [
   "TEAM_CONFIG",
   "WORKFLOW_CONFIG",
   "NOTIFICATION_CONFIG",
+  "DEPARTMENT_CONFIG",
+  "MONITORING_AREA_CONFIG",
+  "TASK_TYPE_CONFIG",
 ] as const;
 
 const ACTIONS = ["VIEW", "CREATE", "EDIT", "DELETE", "APPROVE", "EXPORT", "ADMIN_CONFIG"] as const;
 
-const ADMIN_MODULES = new Set(["USER_MANAGEMENT", "ROLE_MANAGEMENT", "ENTITY_CONFIG", "TEAM_CONFIG", "WORKFLOW_CONFIG", "NOTIFICATION_CONFIG", "SYSTEM_MONITORING"]);
+const ADMIN_MODULES = new Set(["USER_MANAGEMENT", "ROLE_MANAGEMENT", "ENTITY_CONFIG", "TEAM_CONFIG", "WORKFLOW_CONFIG", "NOTIFICATION_CONFIG", "SYSTEM_MONITORING", "DEPARTMENT_CONFIG", "MONITORING_AREA_CONFIG", "TASK_TYPE_CONFIG"]);
 const CORE_MODULES = new Set(["DASHBOARD", "SOURCES", "TASKS", "CALENDAR", "TASK_EXECUTION", "REVIEW_QUEUE", "FINDINGS", "REPORTS", "AUDIT_LOG"]);
 
 function managerGrant(module: string, action: string): boolean {
@@ -38,7 +41,7 @@ function managerGrant(module: string, action: string): boolean {
 }
 
 function analystGrant(module: string, action: string): boolean {
-  if (action === "VIEW" && module !== "ROLE_MANAGEMENT" && module !== "ENTITY_CONFIG" && module !== "TEAM_CONFIG" && module !== "WORKFLOW_CONFIG" && module !== "NOTIFICATION_CONFIG") {
+  if (action === "VIEW" && module !== "ROLE_MANAGEMENT" && module !== "ENTITY_CONFIG" && module !== "TEAM_CONFIG" && module !== "WORKFLOW_CONFIG" && module !== "NOTIFICATION_CONFIG" && module !== "DEPARTMENT_CONFIG" && module !== "MONITORING_AREA_CONFIG" && module !== "TASK_TYPE_CONFIG") {
     return true;
   }
   if (module === "TASK_EXECUTION" && (action === "CREATE" || action === "EDIT")) {
@@ -156,6 +159,201 @@ async function main(): Promise<void> {
       },
     }),
   ]);
+
+  // ── Departments ──
+  console.log("Creating departments...");
+  const complianceDept = await prisma.department.upsert({
+    where: { name: "Compliance" },
+    update: {},
+    create: {
+      name: "Compliance",
+      description: "Regulatory compliance monitoring and oversight",
+    },
+  });
+
+  const internalAuditDept = await prisma.department.upsert({
+    where: { name: "Internal Audit" },
+    update: {},
+    create: {
+      name: "Internal Audit",
+      description: "Internal audit function",
+    },
+  });
+
+  // Link existing teams to departments and create sub-teams
+  console.log("Linking teams to departments...");
+  const complianceTeam = teams.find((t) => t.name === "Compliance");
+  const internalAuditTeam = teams.find((t) => t.name === "Internal Audit");
+
+  if (complianceTeam) {
+    await prisma.team.update({
+      where: { id: complianceTeam.id },
+      data: { departmentId: complianceDept.id },
+    });
+  }
+
+  if (internalAuditTeam) {
+    await prisma.team.update({
+      where: { id: internalAuditTeam.id },
+      data: { departmentId: internalAuditDept.id },
+    });
+  }
+
+  // Create sub-teams
+  await Promise.all([
+    prisma.team.upsert({
+      where: { name: "Compliance Regulatory" },
+      update: { departmentId: complianceDept.id },
+      create: {
+        name: "Compliance Regulatory",
+        description: "Regulatory monitoring and submissions",
+        departmentId: complianceDept.id,
+        approvalRequired: true,
+        evidenceRequired: false,
+        narrativeRequired: false,
+        statusFlow: ["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED"],
+      },
+    }),
+    prisma.team.upsert({
+      where: { name: "Compliance Risk" },
+      update: { departmentId: complianceDept.id },
+      create: {
+        name: "Compliance Risk",
+        description: "Risk monitoring and assessments",
+        departmentId: complianceDept.id,
+        approvalRequired: true,
+        evidenceRequired: false,
+        narrativeRequired: false,
+        statusFlow: ["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED"],
+      },
+    }),
+    prisma.team.upsert({
+      where: { name: "Compliance Data Protection" },
+      update: { departmentId: complianceDept.id },
+      create: {
+        name: "Compliance Data Protection",
+        description: "Data protection and privacy compliance",
+        departmentId: complianceDept.id,
+        approvalRequired: true,
+        evidenceRequired: false,
+        narrativeRequired: false,
+        statusFlow: ["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED"],
+      },
+    }),
+    prisma.team.upsert({
+      where: { name: "Compliance Reporting" },
+      update: { departmentId: complianceDept.id },
+      create: {
+        name: "Compliance Reporting",
+        description: "Regulatory reporting and submissions",
+        departmentId: complianceDept.id,
+        approvalRequired: true,
+        evidenceRequired: false,
+        narrativeRequired: false,
+        statusFlow: ["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED"],
+      },
+    }),
+    prisma.team.upsert({
+      where: { name: "Regulatory Reporting" },
+      update: { departmentId: complianceDept.id },
+      create: {
+        name: "Regulatory Reporting",
+        description: "Periodic regulatory reporting",
+        departmentId: complianceDept.id,
+        approvalRequired: true,
+        evidenceRequired: false,
+        narrativeRequired: false,
+        statusFlow: ["TO_DO", "IN_PROGRESS", "PENDING_REVIEW", "COMPLETED"],
+      },
+    }),
+  ]);
+
+  // ── Monitoring Areas ──
+  console.log("Creating monitoring areas...");
+  const monitoringAreas = [
+    "Access Management",
+    "Accounting",
+    "Affiliates",
+    "Benchmark Regulation",
+    "Best Execution",
+    "Board Suitability",
+    "Breaches",
+    "Business Continuity & Disaster Recovery",
+    "CRS/FATCA",
+    "Central Bank of Malta",
+    "Client Categorisation",
+    "Client Journey",
+    "Complaints",
+    "Compliance Function",
+    "Conflicts of Interest",
+    "Data Protection",
+    "Digital Operational Resilience (DORA)",
+    "Disclosures",
+    "EMIR",
+    "External Audit",
+    "Fees",
+    "Financial Instruments",
+    "Firm Size",
+    "Governance",
+    "ICT/Information Security",
+    "IFR/IFD",
+    "Incidents and Cyber Threats",
+    "Information Security",
+    "Internal Audit",
+    "Liquidity Providers",
+    "MF Quarterly",
+    "MIFIR",
+    "Market Abuse",
+    "Marketing",
+    "Outsourcing",
+    "Passporting",
+    "Product Governance",
+    "Prudential Requirements (IFR)",
+    "Publications",
+    "Quarterly ICT Risk Management Report",
+    "RM Governance",
+    "Recovery Plan",
+    "Risk Monitoring",
+    "Safeguarding Client Assets",
+    "Scam Detections",
+    "Screening",
+    "Staff Dealing",
+    "Sustainable Finance & ESG",
+    "Whistleblowing",
+  ];
+
+  for (const name of monitoringAreas) {
+    await prisma.monitoringArea.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+    console.log(`  ✓ ${name}`);
+  }
+
+  // ── Task Types ──
+  console.log("Creating task types...");
+  const taskTypes = [
+    "Policy Review",
+    "Desk-Based Review",
+    "External Submission",
+    "Fee Payment",
+    "Reporting",
+    "Training",
+    "Audit",
+    "Staff Communication",
+    "Declaration/Board Memo",
+    "Reporting Procedure",
+  ];
+
+  for (const name of taskTypes) {
+    await prisma.taskType.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+    console.log(`  ✓ ${name}`);
+  }
 
   // ── Issuing Authorities ──
   const issuingAuthorities = await Promise.all([
