@@ -270,56 +270,44 @@ async function main(): Promise<void> {
 
   // ── Monitoring Areas ──
   console.log("Creating monitoring areas...");
+  
+  // First, clear existing monitoring areas
+  // Check if any tasks reference monitoring areas
+  const tasksWithMonitoringArea = await prisma.task.count({
+    where: { monitoringAreaId: { not: null } },
+  });
+  
+  if (tasksWithMonitoringArea > 0) {
+    console.log(`  Clearing monitoringAreaId from ${tasksWithMonitoringArea} tasks...`);
+    await prisma.task.updateMany({
+      where: { monitoringAreaId: { not: null } },
+      data: { monitoringAreaId: null },
+    });
+  }
+  
+  // Delete all existing monitoring areas
+  const deletedAreas = await prisma.monitoringArea.deleteMany({});
+  console.log(`  Deleted ${deletedAreas.count} old monitoring areas`);
+  
+  // Create the 17 consolidated monitoring areas
   const monitoringAreas = [
     "Access Management",
-    "Accounting",
-    "Affiliates",
-    "Benchmark Regulation",
-    "Best Execution",
-    "Board Suitability",
-    "Breaches",
-    "Business Continuity & Disaster Recovery",
-    "CRS/FATCA",
-    "Central Bank of Malta",
-    "Client Categorisation",
-    "Client Journey",
-    "Complaints",
-    "Compliance Function",
-    "Conflicts of Interest",
-    "Data Protection",
-    "Digital Operational Resilience (DORA)",
-    "Disclosures",
-    "EMIR",
-    "External Audit",
-    "Fees",
-    "Financial Instruments",
-    "Firm Size",
-    "Governance",
-    "ICT/Information Security",
-    "IFR/IFD",
-    "Incidents and Cyber Threats",
-    "Information Security",
+    "AML/CFT & Financial Crime",
+    "Client Services",
+    "Conduct of Business",
+    "Corporate Governance",
+    "Data Protection & Privacy",
+    "Digital Operational Resilience",
+    "Disclosures & Transparency",
+    "External Relationships",
+    "Financial Reporting",
     "Internal Audit",
-    "Liquidity Providers",
-    "MF Quarterly",
-    "MIFIR",
-    "Market Abuse",
-    "Marketing",
-    "Outsourcing",
-    "Passporting",
-    "Product Governance",
-    "Prudential Requirements (IFR)",
-    "Publications",
-    "Quarterly ICT Risk Management Report",
-    "RM Governance",
-    "Recovery Plan",
-    "Risk Monitoring",
-    "Safeguarding Client Assets",
-    "Scam Detections",
-    "Screening",
-    "Staff Dealing",
-    "Sustainable Finance & ESG",
-    "Whistleblowing",
+    "Investment Services",
+    "Prudential & Capital",
+    "Regulatory Reporting",
+    "Risk Management",
+    "Sustainability",
+    "Breaches & Incidents",
   ];
 
   for (const name of monitoringAreas) {
@@ -333,17 +321,36 @@ async function main(): Promise<void> {
 
   // ── Task Types ──
   console.log("Creating task types...");
+  
+  // First, clear existing task types
+  // Check if any tasks reference task types
+  const tasksWithTaskType = await prisma.task.count({
+    where: { taskTypeId: { not: null } },
+  });
+  
+  if (tasksWithTaskType > 0) {
+    console.log(`  Clearing taskTypeId from ${tasksWithTaskType} tasks...`);
+    await prisma.task.updateMany({
+      where: { taskTypeId: { not: null } },
+      data: { taskTypeId: null },
+    });
+  }
+  
+  // Delete all existing task types
+  const deletedTypes = await prisma.taskType.deleteMany({});
+  console.log(`  Deleted ${deletedTypes.count} old task types`);
+  
+  // Create the 9 consolidated task types
   const taskTypes = [
     "Policy Review",
     "Desk-Based Review",
     "External Submission",
     "Fee Payment",
-    "Reporting",
+    "Regulatory Reporting",
     "Training",
     "Audit",
     "Staff Communication",
-    "Declaration/Board Memo",
-    "Reporting Procedure",
+    "Board Declaration",
   ];
 
   for (const name of taskTypes) {
@@ -679,11 +686,19 @@ async function main(): Promise<void> {
   });
 
   // Create a sample source: MFSA AML/CFT Framework
-  // Delete existing if it exists
+  // Delete existing if it exists (cascade delete tasks, evidence, comments, findings, source items)
   const existingAmlSource = await prisma.source.findFirst({
     where: { code: "MFSA-AML-2026", teamId: teamByName["Compliance"].id },
   });
   if (existingAmlSource) {
+    // Delete in correct order to respect foreign key constraints
+    await prisma.finding.deleteMany({ where: { sourceId: existingAmlSource.id } });
+    await prisma.evidence.deleteMany({ where: { task: { sourceId: existingAmlSource.id } } });
+    await prisma.comment.deleteMany({ where: { task: { sourceId: existingAmlSource.id } } });
+    await prisma.auditLog.deleteMany({ where: { targetType: "Task", targetId: { in: (await prisma.task.findMany({ where: { sourceId: existingAmlSource.id }, select: { id: true } })).map(t => t.id) } } });
+    await prisma.task.deleteMany({ where: { sourceId: existingAmlSource.id } });
+    await prisma.sourceItem.deleteMany({ where: { sourceId: existingAmlSource.id } });
+    await prisma.sourceEntity.deleteMany({ where: { sourceId: existingAmlSource.id } });
     await prisma.source.delete({ where: { id: existingAmlSource.id } });
   }
 
@@ -991,6 +1006,14 @@ async function main(): Promise<void> {
     where: { code: "GDPR-2026", teamId: teamByName["Compliance"].id },
   });
   if (existingGdprSource) {
+    // Delete in correct order to respect foreign key constraints
+    await prisma.finding.deleteMany({ where: { sourceId: existingGdprSource.id } });
+    await prisma.evidence.deleteMany({ where: { task: { sourceId: existingGdprSource.id } } });
+    await prisma.comment.deleteMany({ where: { task: { sourceId: existingGdprSource.id } } });
+    await prisma.auditLog.deleteMany({ where: { targetType: "Task", targetId: { in: (await prisma.task.findMany({ where: { sourceId: existingGdprSource.id }, select: { id: true } })).map(t => t.id) } } });
+    await prisma.task.deleteMany({ where: { sourceId: existingGdprSource.id } });
+    await prisma.sourceItem.deleteMany({ where: { sourceId: existingGdprSource.id } });
+    await prisma.sourceEntity.deleteMany({ where: { sourceId: existingGdprSource.id } });
     await prisma.source.delete({ where: { id: existingGdprSource.id } });
   }
 

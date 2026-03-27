@@ -43,7 +43,7 @@ export function GenerationConfirmModal({
   const taskDefinitionsCount = items.reduce((sum, item) => sum + item.tasks.length, 0);
   const totalTasksToGenerate = taskDefinitionsCount * selectedEntities.length;
   
-  // Validation
+  // Validation - classify into blocking errors vs warnings
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -55,21 +55,31 @@ export function GenerationConfirmModal({
     errors.push("No tasks defined");
   }
 
-  // Check for tasks missing required fields
-  items.forEach((item) => {
+  // Check for blocking issues (required fields) and warnings (optional fields)
+  items.forEach((item, itemIndex) => {
+    const clauseLabel = item.reference || `Clause ${itemIndex + 1}`;
+    
     if (!item.reference.trim()) {
-      warnings.push(`${itemLabel.singular} "${item.title || "Untitled"}" has no reference`);
+      warnings.push(`${clauseLabel}: Missing reference (recommended)`);
     }
     if (!item.title.trim()) {
-      warnings.push(`${itemLabel.singular} with reference "${item.reference || "—"}" has no title`);
+      warnings.push(`${clauseLabel}: Missing title (recommended)`);
     }
     
-    item.tasks.forEach((task) => {
+    item.tasks.forEach((task, taskIndex) => {
+      const taskLabel = `${clauseLabel}, Task ${taskIndex + 1}`;
+      
+      // BLOCKING: Task name is required
       if (!task.name.trim()) {
-        warnings.push(`Task in ${item.reference || "unnamed clause"} has no name`);
+        errors.push(`${taskLabel}: Task name is required`);
       }
+      
+      // WARNINGS: Optional but recommended fields
       if (!task.responsibleTeamId) {
-        warnings.push(`Task "${task.name || "unnamed"}" has no responsible team`);
+        warnings.push(`${taskLabel} ("${task.name || "unnamed"}"): No team assigned (optional)`);
+      }
+      if (!task.picId) {
+        warnings.push(`${taskLabel} ("${task.name || "unnamed"}"): No PIC assigned (optional)`);
       }
     });
   });
@@ -155,30 +165,40 @@ export function GenerationConfirmModal({
               <StatusIcon size={20} style={{ color: statusColor, marginTop: 2 }} />
               <div className="flex-1">
                 <p className="text-sm font-semibold" style={{ color: statusColor }}>
-                  {hasErrors ? "Validation Failed" : warnings.length > 0 ? "Ready with Warnings" : "Ready to Generate"}
+                  {hasErrors ? "Cannot Generate - Fix Required Fields" : warnings.length > 0 ? "Ready with Optional Warnings" : "Ready to Generate"}
                 </p>
                 {errors.length > 0 && (
-                  <ul className="mt-2 space-y-1">
-                    {errors.map((error, idx) => (
-                      <li key={idx} className="text-xs" style={{ color: statusColor }}>
-                        • {error}
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <p className="mt-1 text-xs font-medium" style={{ color: statusColor }}>
+                      Required fields missing:
+                    </p>
+                    <ul className="mt-2 space-y-1">
+                      {errors.map((error, idx) => (
+                        <li key={idx} className="text-xs" style={{ color: statusColor }}>
+                          • {error}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
                 )}
-                {warnings.length > 0 && (
-                  <ul className="mt-2 space-y-1">
-                    {warnings.slice(0, 5).map((warning, idx) => (
-                      <li key={idx} className="text-xs" style={{ color: statusColor }}>
-                        • {warning}
-                      </li>
-                    ))}
-                    {warnings.length > 5 && (
-                      <li className="text-xs" style={{ color: statusColor }}>
-                        • ... and {warnings.length - 5} more warnings
-                      </li>
-                    )}
-                  </ul>
+                {warnings.length > 0 && !hasErrors && (
+                  <>
+                    <p className="mt-1 text-xs font-medium" style={{ color: statusColor }}>
+                      Optional fields not set (you can still generate):
+                    </p>
+                    <ul className="mt-2 space-y-1">
+                      {warnings.slice(0, 8).map((warning, idx) => (
+                        <li key={idx} className="text-xs" style={{ color: statusColor }}>
+                          • {warning}
+                        </li>
+                      ))}
+                      {warnings.length > 8 && (
+                        <li className="text-xs" style={{ color: statusColor }}>
+                          • ... and {warnings.length - 8} more optional fields
+                        </li>
+                      )}
+                    </ul>
+                  </>
                 )}
               </div>
             </div>
@@ -222,7 +242,7 @@ export function GenerationConfirmModal({
                           </div>
                         </td>
                       </tr>
-                      {item.tasks.map((task) => {
+                      {item.tasks.map((task, taskIndex) => {
                         const riskColor = RISK_COLORS[task.riskRating];
                         // Calculate recurrence count
                         let recurrenceCount = 1;
@@ -242,8 +262,8 @@ export function GenerationConfirmModal({
                             <td className="px-4 py-2"></td>
                             <td className="px-4 py-2">
                               <div className="flex items-center gap-2">
-                                <span className="text-sm" style={{ color: "var(--text-primary)" }}>
-                                  {task.name || "Unnamed task"}
+                                <span className="text-sm" style={{ color: task.name ? "var(--text-primary)" : "var(--red)" }}>
+                                  {task.name || `[Task ${taskIndex + 1} - name required]`}
                                 </span>
                                 {task.monitoringAreaId && (
                                   <span className="rounded-md px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}>

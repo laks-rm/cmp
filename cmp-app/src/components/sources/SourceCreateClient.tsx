@@ -332,6 +332,38 @@ export function SourceCreateClient() {
 
       if (!generateRes.ok) {
         const data = await generateRes.json();
+        
+        // Parse Zod validation errors into user-friendly messages
+        if (data.issues && Array.isArray(data.issues)) {
+          const fieldErrors = data.issues
+            .filter((issue: { path: Array<string | number>; message: string }) => !issue.path.includes("quarter")) // Ignore quarter validation
+            .map((issue: { path: Array<string | number>; message: string }) => {
+              const path = issue.path.join(".");
+              
+              // Parse items.X.tasks.Y.field format
+              const match = path.match(/items\.(\d+)\.tasks\.(\d+)\.(\w+)/);
+              if (match) {
+                const itemIndex = parseInt(match[1]);
+                const taskIndex = parseInt(match[2]);
+                const field = match[3];
+                const item = items[itemIndex];
+                const clauseRef = item?.reference || `Clause ${itemIndex + 1}`;
+                
+                if (field === "name") {
+                  return `${clauseRef}, Task ${taskIndex + 1}: Name is required`;
+                }
+                return `${clauseRef}, Task ${taskIndex + 1}: ${field} is invalid`;
+              }
+              
+              return issue.message;
+            });
+          
+          if (fieldErrors.length > 0) {
+            toast.error(`Validation failed: ${fieldErrors[0]}`);
+            return;
+          }
+        }
+        
         throw new Error(data.error || "Failed to generate tasks");
       }
 
