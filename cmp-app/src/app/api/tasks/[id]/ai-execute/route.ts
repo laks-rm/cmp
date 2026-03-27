@@ -49,7 +49,9 @@ async function extractTextFromFile(file: File): Promise<string> {
   try {
     if (filename.endsWith(".pdf")) {
       // Dynamic import to avoid Next.js build issues
-      const pdfParse = (await import("pdf-parse")).default;
+      const pdfParseModule = await import("pdf-parse");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pdfParse = (pdfParseModule as any).default || pdfParseModule;
       const pdfData = await pdfParse(buffer);
       return pdfData.text;
     } else if (filename.endsWith(".docx")) {

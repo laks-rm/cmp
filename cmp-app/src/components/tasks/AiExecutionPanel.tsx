@@ -20,7 +20,7 @@ const safeString = (value: unknown): string => {
   if (typeof value === "object" && value !== null) {
     // If it's an object with common text properties, try to extract text
     const obj = value as Record<string, unknown>;
-    return obj.text || obj.message || obj.content || obj.value || JSON.stringify(value);
+    return (obj.text as string) || (obj.message as string) || (obj.content as string) || (obj.value as string) || JSON.stringify(value);
   }
   return String(value);
 };
@@ -610,10 +610,17 @@ export function AiExecutionPanel({
                         </div>
                       )}
                       <button
-                        onClick={() =>
-                          message.suggestedFinding &&
-                          onOpenFinding(message.suggestedFinding)
-                        }
+                        onClick={() => {
+                          if (message.suggestedFinding?.title && message.suggestedFinding?.description && message.suggestedFinding?.severity) {
+                            onOpenFinding({
+                              title: message.suggestedFinding.title,
+                              description: message.suggestedFinding.description,
+                              severity: message.suggestedFinding.severity,
+                              rootCause: message.suggestedFinding.rootCause,
+                              impact: message.suggestedFinding.impact,
+                            });
+                          }
+                        }}
                         className="w-full px-3 py-2 bg-amber-600 text-white text-sm rounded hover:bg-amber-700 transition-colors font-medium"
                       >
                         Create Finding
