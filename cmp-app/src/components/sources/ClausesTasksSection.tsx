@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Plus, Trash2, ChevronDown, ChevronUp, Upload, FileText, Table as TableIcon } from "lucide-react";
-import type { ItemWithTasks, TaskDefinition, Entity, Team, User, ExtractedClause, InputMethod, ViewMode } from "@/types/source-management";
+import type { ItemWithTasks, TaskDefinition, Entity, Team, User, ExtractedClause, InputMethod, ViewMode, MonitoringArea, TaskType } from "@/types/source-management";
 import { ITEM_LABEL_MAP, FREQUENCIES, FREQUENCY_LABELS, RISK_RATINGS, RISK_COLORS } from "@/types/source-management";
 import toast from "@/lib/toast";
 
@@ -13,6 +13,8 @@ type ClausesTasksSectionProps = {
   selectedEntities: Entity[];
   teams: Team[];
   users: User[];
+  monitoringAreas: MonitoringArea[];
+  taskTypes: TaskType[];
   disabled?: boolean;
 };
 
@@ -23,6 +25,8 @@ export function ClausesTasksSection({
   selectedEntities,
   teams,
   users,
+  monitoringAreas,
+  taskTypes,
   disabled = false,
 }: ClausesTasksSectionProps) {
   const [inputMethod, setInputMethod] = useState<InputMethod>("manual");
@@ -659,6 +663,8 @@ export function ClausesTasksSection({
               itemLabel={itemLabel.singular}
               teams={teams}
               users={users}
+              monitoringAreas={monitoringAreas}
+              taskTypes={taskTypes}
               onUpdate={handleUpdateClause}
               onDelete={handleDeleteClause}
               onToggleExpanded={handleToggleClauseExpanded}
@@ -763,6 +769,8 @@ function ClauseCard({
   itemLabel,
   teams,
   users,
+  monitoringAreas,
+  taskTypes,
   onUpdate,
   onDelete,
   onToggleExpanded,
@@ -775,6 +783,8 @@ function ClauseCard({
   itemLabel: string;
   teams: Team[];
   users: User[];
+  monitoringAreas: MonitoringArea[];
+  taskTypes: TaskType[];
   onUpdate: (tempId: string, field: string, value: string) => void;
   onDelete: (tempId: string) => void;
   onToggleExpanded: (tempId: string) => void;
@@ -841,6 +851,8 @@ function ClauseCard({
                 task={task}
                 teams={teams}
                 users={users}
+                monitoringAreas={monitoringAreas}
+                taskTypes={taskTypes}
                 onUpdate={(field, value) => onUpdateTask(item.tempId, task.tempId, field, value)}
                 onDelete={() => onDeleteTask(item.tempId, task.tempId)}
                 onToggleExpanded={() => onToggleTaskExpanded(item.tempId, task.tempId)}
@@ -867,6 +879,8 @@ function TaskRow({
   task,
   teams,
   users,
+  monitoringAreas,
+  taskTypes,
   onUpdate,
   onDelete,
   onToggleExpanded,
@@ -874,6 +888,8 @@ function TaskRow({
   task: TaskDefinition;
   teams: Team[];
   users: User[];
+  monitoringAreas: MonitoringArea[];
+  taskTypes: TaskType[];
   onUpdate: (field: string, value: string | boolean) => void;
   onDelete: () => void;
   onToggleExpanded: () => void;
@@ -1032,6 +1048,66 @@ function TaskRow({
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+              Monitoring Area
+            </label>
+            <select
+              value={task.monitoringAreaId || ""}
+              onChange={(e) => onUpdate("monitoringAreaId", e.target.value)}
+              className="h-8 w-full rounded-lg border px-2 text-xs outline-none"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <option value="">Select monitoring area</option>
+              {monitoringAreas.map((area) => (
+                <option key={area.id} value={area.id}>
+                  {area.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+              Task Type
+            </label>
+            <select
+              value={task.taskTypeId || ""}
+              onChange={(e) => onUpdate("taskTypeId", e.target.value)}
+              className="h-8 w-full rounded-lg border px-2 text-xs outline-none"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <option value="">Select task type</option>
+              {taskTypes.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+              Testing Period Start
+            </label>
+            <input
+              type="date"
+              value={task.testingPeriodStart || ""}
+              onChange={(e) => onUpdate("testingPeriodStart", e.target.value)}
+              className="h-8 w-full rounded-lg border px-2 text-xs outline-none"
+              style={{ borderColor: "var(--border)" }}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+              Testing Period End
+            </label>
+            <input
+              type="date"
+              value={task.testingPeriodEnd || ""}
+              onChange={(e) => onUpdate("testingPeriodEnd", e.target.value)}
+              className="h-8 w-full rounded-lg border px-2 text-xs outline-none"
+              style={{ borderColor: "var(--border)" }}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
               ClickUp URL
             </label>
             <input
@@ -1080,6 +1156,20 @@ function TaskRow({
               <span style={{ color: "var(--text-secondary)" }}>Review Required</span>
             </label>
           </div>
+          {task.picId && task.responsibleTeamId && (() => {
+            const selectedTeam = teams.find(t => t.id === task.responsibleTeamId);
+            const selectedPIC = users.find(u => u.id === task.picId);
+            const isPICInTeam = selectedTeam?.memberships?.some(m => m.userId === task.picId);
+            
+            if (!isPICInTeam && selectedTeam && selectedPIC) {
+              return (
+                <div className="col-span-2 text-xs" style={{ color: "var(--amber)" }}>
+                  ⚠ {selectedPIC.name} is not a member of {selectedTeam.name}
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
       )}
     </div>

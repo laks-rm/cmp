@@ -6,7 +6,7 @@ import { ChevronRight } from "lucide-react";
 import { SourceDetailsSection } from "./SourceDetailsSection";
 import { ClausesTasksSection } from "./ClausesTasksSection";
 import { GenerationConfirmModal } from "./GenerationConfirmModal";
-import type { Team, User, Entity, IssuingAuthority, ItemWithTasks } from "@/types/source-management";
+import type { Team, User, Entity, IssuingAuthority, ItemWithTasks, MonitoringArea, TaskType } from "@/types/source-management";
 import { ITEM_LABEL_MAP } from "@/types/source-management";
 import toast from "@/lib/toast";
 
@@ -18,6 +18,8 @@ export function SourceCreateClient() {
   const [users, setUsers] = useState<User[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [issuingAuthorities, setIssuingAuthorities] = useState<IssuingAuthority[]>([]);
+  const [monitoringAreas, setMonitoringAreas] = useState<MonitoringArea[]>([]);
+  const [taskTypes, setTaskTypes] = useState<TaskType[]>([]);
   
   // Source details state
   const [detailsMode, setDetailsMode] = useState<"edit" | "collapsed">("edit");
@@ -43,6 +45,8 @@ export function SourceCreateClient() {
     fetchUsers();
     fetchEntities();
     fetchIssuingAuthorities();
+    fetchMonitoringAreas();
+    fetchTaskTypes();
   }, []);
 
   const fetchTeams = async () => {
@@ -90,6 +94,30 @@ export function SourceCreateClient() {
       }
     } catch (error) {
       console.error("Failed to fetch issuing authorities:", error);
+    }
+  };
+
+  const fetchMonitoringAreas = async () => {
+    try {
+      const res = await fetch("/api/monitoring-areas");
+      if (res.ok) {
+        const data = await res.json();
+        setMonitoringAreas(data.monitoringAreas);
+      }
+    } catch (error) {
+      console.error("Failed to fetch monitoring areas:", error);
+    }
+  };
+
+  const fetchTaskTypes = async () => {
+    try {
+      const res = await fetch("/api/task-types");
+      if (res.ok) {
+        const data = await res.json();
+        setTaskTypes(data.taskTypes);
+      }
+    } catch (error) {
+      console.error("Failed to fetch task types:", error);
     }
   };
 
@@ -282,8 +310,10 @@ export function SourceCreateClient() {
               reviewerId: task.reviewerId || "",
               startDate: task.startDate || "",
               dueDate: task.dueDate || "",
-              testingPeriodStart: "",
-              testingPeriodEnd: "",
+              testingPeriodStart: task.testingPeriodStart || "",
+              testingPeriodEnd: task.testingPeriodEnd || "",
+              monitoringAreaId: task.monitoringAreaId || undefined,
+              taskTypeId: task.taskTypeId || undefined,
               evidenceRequired: task.evidenceRequired,
               narrativeRequired: false,
               reviewRequired: task.reviewRequired,
@@ -373,6 +403,8 @@ export function SourceCreateClient() {
             selectedEntities={selectedEntities}
             teams={teams}
             users={users}
+            monitoringAreas={monitoringAreas}
+            taskTypes={taskTypes}
             disabled={detailsMode === "edit"}
           />
         </div>
@@ -439,6 +471,8 @@ export function SourceCreateClient() {
         authorityName={selectedAuthority?.abbreviation || selectedAuthority?.name}
         teamName={selectedTeam?.name || ""}
         items={items}
+        monitoringAreas={monitoringAreas}
+        taskTypes={taskTypes}
         onConfirm={handleGenerate}
         onCancel={() => setShowConfirmModal(false)}
         isGenerating={isGenerating}

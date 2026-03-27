@@ -29,6 +29,11 @@ type Task = {
   reviewerId: string | null;
   picId: string | null;
   responsibleTeamId: string | null;
+  monitoringArea: { id: string; name: string } | null;
+  taskType: { id: string; name: string } | null;
+  testingPeriodStart: string | null;
+  testingPeriodEnd: string | null;
+  deferralReason: string | null;
 };
 
 type Reviewer = {
@@ -361,6 +366,48 @@ export function TaskSidebar({
               <span className="text-sm" style={{ color: "var(--text-muted)" }}>Not set</span>
             )}
           </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+              Monitoring Area
+            </label>
+            <span className="text-sm" style={{ color: task.monitoringArea ? "var(--text-primary)" : "var(--text-muted)" }}>
+              {task.monitoringArea?.name || "Not set"}
+            </span>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+              Task Type
+            </label>
+            <span className="text-sm" style={{ color: task.taskType ? "var(--text-primary)" : "var(--text-muted)" }}>
+              {task.taskType?.name || "Not set"}
+            </span>
+          </div>
+
+          {(task.testingPeriodStart || task.testingPeriodEnd) && (
+            <div>
+              <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                Testing Period
+              </label>
+              <span className="text-sm" style={{ color: "var(--text-primary)" }}>
+                {task.testingPeriodStart && format(new Date(task.testingPeriodStart), "MMM d, yyyy")}
+                {task.testingPeriodStart && task.testingPeriodEnd && " - "}
+                {task.testingPeriodEnd && format(new Date(task.testingPeriodEnd), "MMM d, yyyy")}
+              </span>
+            </div>
+          )}
+
+          {task.status === "DEFERRED" && (
+            <div>
+              <label className="mb-1 block text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                Deferral Reason
+              </label>
+              <span className="text-sm" style={{ color: task.deferralReason ? "var(--text-primary)" : "var(--text-muted)" }}>
+                {task.deferralReason || "No reason provided"}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

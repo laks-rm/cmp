@@ -4,6 +4,13 @@ export type Team = {
   approvalRequired: boolean;
   evidenceRequired: boolean;
   narrativeRequired: boolean;
+  memberships?: Array<{
+    userId: string;
+    user: {
+      id: string;
+      name: string;
+    };
+  }>;
 };
 
 export type User = {
@@ -18,6 +25,18 @@ export type Entity = {
   id: string;
   code: string;
   name: string;
+};
+
+export type MonitoringArea = {
+  id: string;
+  name: string;
+  description: string | null;
+};
+
+export type TaskType = {
+  id: string;
+  name: string;
+  description: string | null;
 };
 
 export type IssuingAuthority = {
@@ -44,6 +63,10 @@ export type TaskDefinition = {
   reviewRequired: boolean;
   clickupUrl: string;
   gdriveUrl: string;
+  monitoringAreaId?: string;
+  taskTypeId?: string;
+  testingPeriodStart?: string;
+  testingPeriodEnd?: string;
   expanded?: boolean;
 };
 

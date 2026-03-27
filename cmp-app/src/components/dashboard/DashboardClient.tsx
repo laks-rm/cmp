@@ -115,6 +115,14 @@ type DashboardStats = {
     openFindings: number;
     highFindings: number;
   }>;
+  monitoringAreaPosture: Array<{
+    monitoringAreaId: string | null;
+    monitoringAreaName: string;
+    total: number;
+    completed: number;
+    overdue: number;
+    completionPct: number;
+  }>;
   upcomingDeadlines: Array<{
     id: string;
     name: string;
@@ -840,7 +848,115 @@ export function DashboardClient({ firstName, greeting }: DashboardClientProps) {
         </div>
       </div>
 
-      {/* Two-column: Compliance Posture + Upcoming Deadlines */}
+      {/* Two-column: Monitoring Area Posture + Upcoming Deadlines */}
+      <div className="grid grid-cols-3 gap-4">
+        {/* Compliance by Monitoring Area - 2 columns */}
+        <div className="col-span-2 rounded-[14px] border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                Compliance by monitoring area
+              </h2>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Top 10 areas by completion rate
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {stats.monitoringAreaPosture.length > 0 ? (
+              stats.monitoringAreaPosture.map((area) => {
+                const posture = 
+                  area.completionPct >= 80 && area.overdue === 0 ? "good" :
+                  area.completionPct >= 50 ? "medium" : "poor";
+                const postureColor = 
+                  posture === "good" ? "var(--green)" :
+                  posture === "medium" ? "var(--amber)" : "var(--red)";
+                
+                return (
+                  <div 
+                    key={area.monitoringAreaId || "uncategorized"}
+                    className="rounded-lg border p-3"
+                    style={{ borderColor: "var(--border-light)" }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                        {area.monitoringAreaName}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        {area.overdue > 0 && (
+                          <span className="text-xs font-semibold" style={{ color: "var(--red)" }}>
+                            {area.overdue} overdue
+                          </span>
+                        )}
+                        <span className="text-xs font-semibold" style={{ color: postureColor }}>
+                          {area.completionPct}%
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                        {area.completed}/{area.total} tasks done
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)" }}>
+                      <div 
+                        className="h-full transition-all duration-500 rounded-full"
+                        style={{ 
+                          width: `${area.completionPct}%`,
+                          backgroundColor: postureColor
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>
+                No tasks categorized by monitoring area
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Upcoming Deadlines - 1 column */}
+        <div className="rounded-[14px] border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>
+          <h2 className="mb-4 text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+            Upcoming deadlines
+          </h2>
+          <div className="space-y-2">
+            {stats.upcomingDeadlines.length > 0 ? (
+              stats.upcomingDeadlines.map((task) => (
+                <div 
+                  key={task.id}
+                  className="cursor-pointer rounded-lg border p-2 transition-all hover:border-[var(--blue)] hover:shadow-sm"
+                  style={{ borderColor: "var(--border-light)" }}
+                  onClick={() => router.push(`/tasks/${task.id}`)}
+                >
+                  <p className="text-xs font-medium leading-tight mb-1" style={{ color: "var(--text-primary)" }}>
+                    {task.name}
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                      {task.picName}
+                    </span>
+                    <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                      {task.daysUntilDue} days
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>
+                No upcoming deadlines
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Two-column: Compliance Posture by Source */}
       <div className="grid grid-cols-3 gap-4">
         {/* Compliance Posture by Source - 2 columns - Top 5 with toggle */}
         <div className="col-span-2 rounded-[14px] border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>

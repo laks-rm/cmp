@@ -11,6 +11,8 @@ export const taskQuerySchema = z.object({
   riskRating: z.enum(["HIGH", "MEDIUM", "LOW"]).optional(),
   frequency: z.enum(["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL", "BIENNIAL", "ONE_TIME"]).optional(),
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]).optional(),
+  monitoringAreaId: z.string().uuid().optional().or(z.literal("")),
+  taskTypeId: z.string().uuid().optional().or(z.literal("")),
   search: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(10000).default(25),

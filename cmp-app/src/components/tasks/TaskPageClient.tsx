@@ -106,6 +106,9 @@ type Task = {
   reviewerId: string | null;
   entityId: string | null;
   sourceId: string | null;
+  monitoringArea: { id: string; name: string } | null;
+  taskType: { id: string; name: string } | null;
+  deferralReason: string | null;
   _count?: {
     evidence: number;
   };

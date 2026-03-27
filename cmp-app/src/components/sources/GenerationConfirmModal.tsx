@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertCircle, CheckCircle, X } from "lucide-react";
-import type { ItemWithTasks, Entity } from "@/types/source-management";
+import type { ItemWithTasks, Entity, MonitoringArea, TaskType } from "@/types/source-management";
 import { ITEM_LABEL_MAP, FREQUENCY_LABELS, RISK_COLORS, SOURCE_TYPE_COLORS } from "@/types/source-management";
 
 type GenerationConfirmModalProps = {
@@ -13,6 +13,8 @@ type GenerationConfirmModalProps = {
   authorityName?: string;
   teamName: string;
   items: ItemWithTasks[];
+  monitoringAreas: MonitoringArea[];
+  taskTypes: TaskType[];
   onConfirm: () => void;
   onCancel: () => void;
   isGenerating?: boolean;
@@ -27,6 +29,8 @@ export function GenerationConfirmModal({
   authorityName,
   teamName,
   items,
+  monitoringAreas,
+  taskTypes,
   onConfirm,
   onCancel,
   isGenerating = false,
@@ -237,9 +241,21 @@ export function GenerationConfirmModal({
                           <tr key={task.tempId} style={{ borderBottom: "1px solid var(--border-light)" }}>
                             <td className="px-4 py-2"></td>
                             <td className="px-4 py-2">
-                              <span className="text-sm" style={{ color: "var(--text-primary)" }}>
-                                {task.name || "Unnamed task"}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm" style={{ color: "var(--text-primary)" }}>
+                                  {task.name || "Unnamed task"}
+                                </span>
+                                {task.monitoringAreaId && (
+                                  <span className="rounded-md px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: "var(--blue-light)", color: "var(--blue)" }}>
+                                    {monitoringAreas.find((a) => a.id === task.monitoringAreaId)?.name}
+                                  </span>
+                                )}
+                                {task.taskTypeId && (
+                                  <span className="rounded-md px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: "var(--purple-light)", color: "var(--purple)" }}>
+                                    {taskTypes.find((t) => t.id === task.taskTypeId)?.name}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-4 py-2">
                               <span className="text-xs" style={{ color: "var(--text-secondary)" }}>

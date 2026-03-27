@@ -90,7 +90,8 @@ export async function GET(req: NextRequest) {
       avgCompletionData,
       regulatoryCoverage,
       compliancePosture,
-      upcomingDeadlines
+      upcomingDeadlines,
+      monitoringAreaPosture
     ] = await Promise.all([
       // 1. Due this week
       prisma.task.count({
@@ -572,7 +573,37 @@ export async function GET(req: NextRequest) {
           entity: { select: { code: true } },
           pic: { select: { name: true } }
         }
-      })
+      }),
+
+      // 23. Monitoring area posture
+      prisma.$queryRaw<Array<{
+        monitoringAreaId: string | null;
+        monitoringAreaName: string | null;
+        total: number;
+        completed: number;
+        overdue: number;
+      }>>`
+        SELECT
+          ma.id as "monitoringAreaId",
+          ma.name as "monitoringAreaName",
+          COUNT(DISTINCT CASE WHEN t."dueDate" <= ${startOfTodayUTC} AND t.status != 'PLANNED' THEN t.id END)::int as total,
+          COUNT(DISTINCT CASE WHEN t.status = 'COMPLETED' AND t."dueDate" <= ${startOfTodayUTC} THEN t.id END)::int as completed,
+          COUNT(DISTINCT CASE WHEN t.status NOT IN ('COMPLETED', 'PLANNED', 'DEFERRED', 'NOT_APPLICABLE')
+                AND t."dueDate" < ${startOfTodayUTC} THEN t.id END)::int as overdue
+        FROM "MonitoringArea" ma
+        LEFT JOIN "Task" t ON t."monitoringAreaId" = ma.id
+          ${!isGroupView ? Prisma.raw(`AND t."entityId" = '${entityIdParam}'`) : Prisma.raw('')}
+          ${isGroupView ? Prisma.raw(`AND t."entityId" IN (SELECT UNNEST(ARRAY[${session.user.entityIds?.map(id => `'${id}'`).join(',')}]::text[]))`) : Prisma.raw('')}
+        WHERE ma."isActive" = true
+        GROUP BY ma.id, ma.name
+        HAVING COUNT(DISTINCT t.id) > 0
+        ORDER BY 
+          CASE WHEN COUNT(DISTINCT t.id) > 0 
+            THEN CAST(COUNT(DISTINCT CASE WHEN t.status = 'COMPLETED' THEN t.id END) AS FLOAT) / COUNT(DISTINCT CASE WHEN t."dueDate" <= ${startOfTodayUTC} AND t.status != 'PLANNED' THEN t.id END)
+            ELSE 0
+          END ASC
+        LIMIT 10
+      `
     ]);
 
     // Calculate KPI metrics
@@ -660,9 +691,19 @@ export async function GET(req: NextRequest) {
       entityCode: task.entity.code,
       dueDate: task.dueDate,
       picName: task.pic?.name || "Unassigned",
-      daysUntilDue: task.dueDate 
+      daysUntilDue: task.dueDate
         ? Math.floor((new Date(task.dueDate).getTime() - startOfTodayUTC.getTime()) / (1000 * 60 * 60 * 24))
         : null
+    }));
+
+    // Format monitoring area posture
+    const formattedMonitoringAreaPosture = monitoringAreaPosture.map(area => ({
+      monitoringAreaId: area.monitoringAreaId,
+      monitoringAreaName: area.monitoringAreaName || "Uncategorized",
+      total: area.total,
+      completed: area.completed,
+      overdue: area.overdue,
+      completionPct: area.total > 0 ? Math.round((area.completed / area.total) * 100) : 0
     }));
 
     console.timeEnd("dashboard-stats");
@@ -692,7 +733,8 @@ export async function GET(req: NextRequest) {
       statusByRiskRating,
       findingsOverview: formattedFindings,
       compliancePosture,
-      upcomingDeadlines: formattedUpcomingDeadlines
+      upcomingDeadlines: formattedUpcomingDeadlines,
+      monitoringAreaPosture: formattedMonitoringAreaPosture
     });
 
   } catch (error) {

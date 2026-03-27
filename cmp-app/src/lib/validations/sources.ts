@@ -51,6 +51,8 @@ export const createTaskForSourceSchema = z.object({
   dueDate: z.string().optional(),
   testingPeriodStart: z.string().optional(),
   testingPeriodEnd: z.string().optional(),
+  monitoringAreaId: z.string().uuid().optional(),
+  taskTypeId: z.string().uuid().optional(),
   evidenceRequired: z.boolean().default(false),
   narrativeRequired: z.boolean().default(false),
   reviewRequired: z.boolean().default(true),

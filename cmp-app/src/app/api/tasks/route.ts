@@ -64,6 +64,14 @@ export async function GET(req: NextRequest) {
       where.quarter = params.quarter;
     }
 
+    if (params.monitoringAreaId) {
+      where.monitoringAreaId = params.monitoringAreaId;
+    }
+
+    if (params.taskTypeId) {
+      where.taskTypeId = params.taskTypeId;
+    }
+
     if (params.sourceId) {
       where.sourceId = params.sourceId;
     }

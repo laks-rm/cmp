@@ -231,6 +231,8 @@ export async function POST(req: NextRequest, context: { params: { id: string } }
                 plannedDate: instance.plannedDate,
                 testingPeriodStart: taskData.testingPeriodStart ? new Date(taskData.testingPeriodStart) : null,
                 testingPeriodEnd: taskData.testingPeriodEnd ? new Date(taskData.testingPeriodEnd) : null,
+                monitoringAreaId: taskData.monitoringAreaId || null,
+                taskTypeId: taskData.taskTypeId || null,
                 evidenceRequired: taskData.evidenceRequired,
                 narrativeRequired: taskData.narrativeRequired,
                 reviewRequired: taskData.reviewRequired,

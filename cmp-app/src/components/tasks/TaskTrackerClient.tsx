@@ -49,6 +49,8 @@ type Task = {
   assignee: { id: string; name: string; initials: string; avatarColor: string | null } | null;
   pic: { id: string; name: string; initials: string; avatarColor: string | null } | null;
   responsibleTeam: { id: string; name: string } | null;
+  monitoringArea: { id: string; name: string } | null;
+  taskType: { id: string; name: string } | null;
 };
 
 type TaskStats = {
@@ -141,6 +143,16 @@ const TaskRow = memo(
         <td className="px-4 py-3">
           <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: riskConfig.bg, color: riskConfig.color }}>
             {task.riskRating}
+          </span>
+        </td>
+        <td className="px-4 py-3">
+          <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            {task.monitoringArea?.name || "—"}
+          </span>
+        </td>
+        <td className="px-4 py-3">
+          <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            {task.taskType?.name || "—"}
           </span>
         </td>
         <td className="px-4 py-3">
@@ -240,6 +252,8 @@ export function TaskTrackerClient() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [modalTaskId, setModalTaskId] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<{ id: string; name: string } | null>(null);
+  const [monitoringAreas, setMonitoringAreas] = useState<Array<{ id: string; name: string }>>([]);
+  const [taskTypes, setTaskTypes] = useState<Array<{ id: string; name: string }>>([]);
 
   const [filters, setFilters] = useState({
     preset: "all",
@@ -250,6 +264,8 @@ export function TaskTrackerClient() {
     riskRating: "",
     dueDateFrom: "",
     dueDateTo: "",
+    monitoringAreaId: "",
+    taskTypeId: "",
   });
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
@@ -284,6 +300,12 @@ export function TaskTrackerClient() {
       }
       if (filters.riskRating) {
         params.set("riskRating", filters.riskRating);
+      }
+      if (filters.monitoringAreaId) {
+        params.set("monitoringAreaId", filters.monitoringAreaId);
+      }
+      if (filters.taskTypeId) {
+        params.set("taskTypeId", filters.taskTypeId);
       }
       if (sourceIdParam) {
         params.set("sourceId", sourceIdParam);
@@ -365,6 +387,31 @@ export function TaskTrackerClient() {
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
+
+  useEffect(() => {
+    const fetchMetadata = async () => {
+      try {
+        const [areasRes, typesRes] = await Promise.all([
+          fetch("/api/monitoring-areas"),
+          fetch("/api/task-types"),
+        ]);
+        
+        if (areasRes.ok) {
+          const data = await areasRes.json();
+          setMonitoringAreas(data.monitoringAreas);
+        }
+        
+        if (typesRes.ok) {
+          const data = await typesRes.json();
+          setTaskTypes(data.taskTypes);
+        }
+      } catch (error) {
+        console.error("Failed to fetch metadata:", error);
+      }
+    };
+    
+    fetchMetadata();
+  }, []);
 
   async function handleStatusChange(taskId: string, status: string) {
     try {
@@ -722,6 +769,42 @@ export function TaskTrackerClient() {
                 style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
               />
             </div>
+
+            {/* Monitoring Area Filter */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                Monitoring Area
+              </label>
+              <select
+                value={filters.monitoringAreaId}
+                onChange={(e) => setFilters({ ...filters, monitoringAreaId: e.target.value })}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              >
+                <option value="">All Areas</option>
+                {monitoringAreas.map((area) => (
+                  <option key={area.id} value={area.id}>{area.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Task Type Filter */}
+            <div>
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+                Task Type
+              </label>
+              <select
+                value={filters.taskTypeId}
+                onChange={(e) => setFilters({ ...filters, taskTypeId: e.target.value })}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[var(--blue)]"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              >
+                <option value="">All Types</option>
+                {taskTypes.map((type) => (
+                  <option key={type.id} value={type.id}>{type.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Clear Filters Button */}
@@ -735,7 +818,9 @@ export function TaskTrackerClient() {
                 status: "", 
                 riskRating: "", 
                 dueDateFrom: "", 
-                dueDateTo: "" 
+                dueDateTo: "",
+                monitoringAreaId: "",
+                taskTypeId: "",
               })}
               className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--bg-subtle)]"
               style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
@@ -802,6 +887,12 @@ export function TaskTrackerClient() {
                     Risk
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    Area
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    Type
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
                     PIC
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
@@ -818,13 +909,13 @@ export function TaskTrackerClient() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+                    <td colSpan={11} className="px-4 py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
                       Loading tasks...
                     </td>
                   </tr>
                 ) : tasks.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center">
+                    <td colSpan={11} className="px-4 py-12 text-center">
                       <Filter size={48} className="mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
                       <p className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
                         No tasks found

@@ -27,17 +27,22 @@ export async function GET() {
 
     const teams = await prisma.team.findMany({
       where: { isActive: true },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        approvalRequired: true,
-        evidenceRequired: true,
-        narrativeRequired: true,
+      include: {
         department: {
           select: {
             id: true,
             name: true,
+          },
+        },
+        memberships: {
+          select: {
+            userId: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
           },
         },
       },

@@ -49,6 +49,14 @@ type Task = {
     id: string;
     name: string;
   } | null;
+  monitoringArea: {
+    id: string;
+    name: string;
+  } | null;
+  taskType: {
+    id: string;
+    name: string;
+  } | null;
 };
 
 type GroupedTask = {
@@ -1151,6 +1159,12 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                         Risk
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase" style={{ color: "var(--text-secondary)" }}>
+                        Area
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase" style={{ color: "var(--text-secondary)" }}>
+                        Type
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase" style={{ color: "var(--text-secondary)" }}>
                         PIC
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase" style={{ color: "var(--text-secondary)" }}>
@@ -1219,6 +1233,16 @@ export function SourceDetailClient({ sourceId }: SourceDetailClientProps) {
                               }}
                             >
                               {task.riskRating}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                              {task.monitoringArea?.name || "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                              {task.taskType?.name || "—"}
                             </span>
                           </td>
                           <td className="px-4 py-3">
@@ -1434,6 +1458,20 @@ function GroupedTaskRow({ group, onDelete }: { group: GroupedTask; onDelete: () 
         >
           {task.riskRating}
         </span>
+        
+        {/* Monitoring Area */}
+        {task.monitoringArea && (
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {task.monitoringArea.name}
+          </span>
+        )}
+        
+        {/* Task Type */}
+        {task.taskType && (
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {task.taskType.name}
+          </span>
+        )}
         
         {/* PIC */}
         {task.pic && (
