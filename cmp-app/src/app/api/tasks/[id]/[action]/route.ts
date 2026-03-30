@@ -172,8 +172,33 @@ export async function POST(req: NextRequest, context: { params: { id: string; ac
 
         await requirePermission(session, "REVIEW_QUEUE", "APPROVE");
 
-        const body = await req.json();
-        const comment = body.comment || "";
+        let comment = "";
+        
+        // Check if this is a FormData request (with files) or JSON request
+        const contentType = req.headers.get("content-type") || "";
+        
+        if (contentType.includes("multipart/form-data")) {
+          // Handle FormData with files
+          const formData = await req.formData();
+          comment = (formData.get("comment") as string) || "";
+          
+          // Handle file uploads if any
+          const files = formData.getAll("files");
+          if (files.length > 0) {
+            // Store files as evidence attached to the task
+            for (const file of files) {
+              if (file instanceof File) {
+                // You can upload these files to your evidence storage here
+                // For now, we'll just log that files were received
+                console.log(`Received file for return: ${file.name}`);
+              }
+            }
+          }
+        } else {
+          // Handle JSON request (backward compatibility)
+          const body = await req.json();
+          comment = body.comment || "";
+        }
 
         const updatedTask = await updateTaskWithOptimisticLock(taskId, task.version, {
           status: "IN_PROGRESS",

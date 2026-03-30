@@ -271,12 +271,25 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
     }
   };
 
-  const handleTaskAction = async (action: string, comment?: string) => {
+  const handleTaskAction = async (action: string, comment?: string, files?: File[]) => {
     try {
+      let body: FormData | string | undefined;
+      
+      if (files && files.length > 0) {
+        const formData = new FormData();
+        formData.append("comment", comment || "");
+        files.forEach((file) => {
+          formData.append("files", file);
+        });
+        body = formData;
+      } else if (comment) {
+        body = JSON.stringify({ comment });
+      }
+
       const res = await fetch(`/api/tasks/${taskId}/${action}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: comment ? JSON.stringify({ comment }) : undefined,
+        headers: files && files.length > 0 ? undefined : { "Content-Type": "application/json" },
+        body,
       });
 
       if (!res.ok) {
@@ -802,7 +815,7 @@ export function TaskPageClient({ taskId }: TaskPageClientProps) {
             onSubmitReview={() => handleTaskAction("submit-review")}
             onMarkComplete={() => handleTaskAction("mark-complete")}
             onApprove={() => handleTaskAction("approve")}
-            onRequestChanges={() => handleTaskAction("request-changes")}
+            onRequestChanges={(reason, files) => handleTaskAction("request-changes", reason, files)}
             onRecall={() => handleTaskAction("recall")}
             completedAt={task.completedAt}
             reviewerName={task.reviewer?.name || null}
